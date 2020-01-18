@@ -1,5 +1,5 @@
 /*
-Gradient descent explorer
+Interactive gradient descent explorer
 Author: Kyle Bradbury
 Idea adapted from: http://bl.ocks.org/WilliamQLiu/76ae20060e19bf42d774
 */
@@ -58,9 +58,9 @@ function rand_array(maxval,N) {
     return rand_vals;
 }
 
-function add_noise(x,std_noise) {
-    return x.map(x => x + randn()*std_noise) ;
-}
+// function add_noise(x,std_noise) {
+//     return x.map(x => x + randn()*std_noise) ;
+// }
 
 // Create a representation of the true function
 function gen_function_data(f,n,xmax) {
@@ -69,14 +69,46 @@ function gen_function_data(f,n,xmax) {
     return make_d3_ready({x:x, y:y}) ;
 }
 
-// Create the training data
-function gen_corrupted_data(f,N,xmax,noise_std) {
+// Create the noise-free data
+function gen_function_data_random_x(f,N,xmax) {
     let x = rand_array(xmax,N) ;
     x.sort();
     let y = x.map(v => f(v)) ;
-    y = add_noise(y, noise_std) ;
+    
     return make_d3_ready({x:x, y:y}) ;
 }
+
+function gen_noise(N) {
+    let noise = [];
+    for (let i = 0; i < N; i++) {
+        noise.push(randn());
+    }
+    return noise ;
+}
+
+// // Create the training data
+// function gen_corrupted_data(f,N,xmax,noise_std) {
+//     let x = rand_array(xmax,N) ;
+//     x.sort();
+//     let y = x.map(v => f(v)) ;
+//     y = add_noise(y, noise_std) ;
+//     return make_d3_ready({x:x, y:y}) ;
+// }
+
+function corrupt_data(raw_function,noise) {
+    let output = [];
+    N = raw_function.length;
+    for (let i = 0; i < N; i++) {
+        output.push({x:raw_function[i].x, y:raw_function[i].y + noise_std*noise[i]}) ;
+    }
+    return output 
+}
+
+// function gen_corrupted_data(f,N,xmax,noise_std) {
+//     let raw_function = gen_function_data_random_x(f,N,xmax);
+//     let noise = gen_noise(N)
+//     return corrupt_data(raw_function, noise);
+// }
 
 function make_d3_ready(data) {
     let d3data = []; 
@@ -94,9 +126,10 @@ let XMAX = Math.PI,
     WMAX = 30,
     EMIN = 0,
     EMAX = 2.5,
-    nTarget = 200,
+    nTarget = 601,
     nWeights = 601,
     true_weight = 5,
+    NOISE_MAX = 0.5,
     f = f_generator(true_weight);
 
 // Define parameters that may change interactively
@@ -111,7 +144,10 @@ let nData = 9,
 
 function new_scenario() {
     let target = gen_function_data(f,nTarget,XMAX),
-        data = gen_corrupted_data(f,nData,XMAX,noise_std),
+        // data = gen_corrupted_data(f,nData,XMAX,noise_std),
+        noisefree_data = gen_function_data_random_x(f,nData,XMAX),
+        noise = gen_noise(nData),
+        data = corrupt_data(noisefree_data, noise);
         weights = linspace(WMIN,WMAX,nWeights),
         error_data = mse(weights,data),
         hypothesis = [] ;
@@ -120,10 +156,25 @@ function new_scenario() {
         }
         
     return {target:target, 
+            noisefree_data:noisefree_data,
+            noise:noise,
             data:data, 
             weights:weights, 
             error_data:error_data,
             hypothesis:hypothesis};
+}
+
+function recalculate_error() {
+    state.error_data = mse(state.weights,state.data);
+}
+
+function recalculate_noise() {
+    state.data = corrupt_data(state.noisefree_data, state.noise);
+    state.error_data = mse(state.weights,state.data)
+}
+
+function recalculate_hypothesis() {
+    state.hypothesis = gen_function_data(f_generator(w_hat),nTarget,XMAX)  
 }
 
 var state = new_scenario();
@@ -138,19 +189,23 @@ function refresh() {
 
 // [X] Button to generate new data
 // [X] Slider to adjust number of data points
-// Button to turn on plot for the hypothesis function
-// Ability to click a point along the Error plot and display the hypothesis function
-// Ability to move the training data points
-// Ability to delete the training data points
-// Add legend
-// Calculate gradient
-// Move in the direction of gradient (batch)
-// Take step with SGD
-// Create slider to adjust noise level
+// [ ] Button to turn on plot for the hypothesis function
+// [ ] Can hover over a point along the Error plot and display the hypothesis function
+// [ ] Can click on the error plot to lock in point
+// [X] Can move the training data points
+// [ ] Can delete the training data points
+// [ ] Add legend
+// [ ] Calculate gradient
+// [ ] Move in the direction of gradient (batch)
+// [ ] Take step with SGD
+// [X] Create slider to adjust noise level
+// [ ] Color the points according to model to judge fit
+// [ ] Checkbox to show/hide target model
+// [ ] Checkbox to show/hide target error point
 
 /*
 --------------------------------------------
-PLOTTING FUNCTION
+PLOT DATA, TARGET, AND ESTIMATE
 --------------------------------------------
 */
 var w = 400,
@@ -217,6 +272,7 @@ function update_target_line() {
 
     svg.append("path")
         .attr("class", "targetline")
+        .attr("id", "target")
         .attr("d", valueline(state.target));
 }
 
@@ -239,30 +295,91 @@ function update_training_circles() {
         .merge(training_circles)
         .attr("cx", function(d) { return xScale(d.x); })
         .attr("cy", function(d) { return yScale(d.y); })
-        .attr("r", radius);
+        .attr("r", radius)
+        .call(d3.drag()
+                  .on("start", dragstarted)
+                  .on("drag", dragged)
+                  .on("end", dragended)
+                  );
+        // .on("mouseover", handleMouseOver)
+        // .on("mouseout", handleMouseOut)
 }
 
 update_target_line();
 update_hypothesis_line();
 update_training_circles();
 
-// svg.append("rect")
-//     .attr("class", "rect-for-mouseover")
-//     .attr("width", w)
-//     .attr("height", h)
-//     .on("mousemove", mousemoved);
-
 /*
 --------------------------------------------
-CLICKING AND DRAGGING POINTS
+DRAG TO CHANGE DATA
 --------------------------------------------
 */
 
+function dragstarted(d) {
+    d3.select(this).attr("fill", "orange");
+    d.x = d3.event.x;
+    d.y = d3.event.y;
+}
+
+function dragged(d,i) {
+    // Use d3.mouse instead of d3.event.x to work around issues with scaling the data
+    var coords = d3.mouse(this);
+    
+    // Update the datapoint to match the new position
+    d.x = xScale.invert(coords[0]);
+    d.y = yScale.invert(coords[1]);
+
+    // Check to make sure points don't move off the plot
+    if (d.x < 0) {d.x = 0;}
+    if (d.x > XMAX) {d.x = XMAX;}
+    if (d.y < YMIN) {d.y = YMIN;}
+    if (d.y > YMAX) {d.y = YMAX;}
+
+    d3.select(this)
+        .attr("cx", xScale(d.x))
+        .attr("cy", yScale(d.y));
+
+    // Redraw the error functions based on the new data
+    recalculate_error()
+    update_error_line();
+}
+
+function dragended(d) {
+    d3.select(this).attr("fill", 'black');
+}
+
+
+function handleMouseOver(d, i) {  // Add interactivity
+
+    // Use D3 to select element, change color and size
+    d3.select(this)
+        .attr("fill", "orange")
+        .attr("r", radius * 1.2)
+
+    // Specify where to put label of text
+    // svg.append("text")
+    //     .attr("id", "id" + i)  // Create an id for text so we can select it later for removing on mouseout
+    //     .attr("x", function() { return xScale(d.x) - 30; })
+    //     .attr("y", function() { return yScale(d.y) - 15; })
+    //     .text(function() {
+    //         return [d.x.toFixed(2), d.y.toFixed(2)];  // Value of the text
+    //     });
+}
+
+function handleMouseOut(d, i) {
+    // Use D3 to select element, change color back to normal
+    d3.select(this)
+        .attr("fill", "black")
+        .attr("r", radius);
+
+    // Select text by id and then remove
+    // d3.select("#id" + i).remove();  // Remove text location
+}
 
 
 /*
 --------------------------------------------
-PLOTTING ERROR
+PLOT ERROR
 --------------------------------------------
 */
 
@@ -318,6 +435,12 @@ svg_ep.append("text")
     .attr("transform", "rotate(-90)")
     .text("E(w)");
 
+svg_ep.append("rect")
+        .attr("class", "rect-for-mouseover")
+        .attr("width", w)
+        .attr("height", h)
+        .on("mousemove", mousemoved);
+
 function update_error_line() {
     svg_ep.selectAll("path.line").remove()
 
@@ -328,6 +451,11 @@ function update_error_line() {
 
 update_error_line();
 
+
+// Create a single circle for highlighting selected point
+svg_ep.append("circle")
+    .attr("id","error_point");
+
 // svg_ep.selectAll("circle")
 //     .data(error_data)
 //     .enter()
@@ -336,22 +464,87 @@ update_error_line();
 //     .attr("cy", function(d) { return yScale_ep(d.y); })
 //     .attr("r", radius);  // Get attributes from circleAttrs var
 
+/*
+--------------------------------------------
+MOUSE HOVER INTERACTION FOR ERROR PLOT
+--------------------------------------------
+*/
+
+function mousemoved() {
+    var m = d3.mouse(this);
+    index = get_nearest_x(m);
+
+    // remove_existing_highlight();
+    select_weight(index);
+}
+
+function select_weight(index) {
+    let d = state.error_data[index];
+    w_hat = state.weights[index];
+    d3.select('#error_point')
+        .attr("fill", "red")
+        .attr("r", radius)
+        .attr("cx", xScale_ep(d.x))
+        .attr("cy", yScale_ep(d.y))
+        .attr('weight_index',index)
+        .raise();
+    recalculate_hypothesis()
+    update_hypothesis_line();
+}
+
+function get_nearest_x(m) {
+    var mindist = 10e6;
+    var dist = [];
+    var index = [];
+    var x = xScale_ep.invert(m[0]);
+    state.error_data.forEach(function(d,i) {
+        dist = Math.abs(d.x - x);
+        if (dist < mindist) {
+            index = i;
+            mindist = dist ;
+        }
+    })
+    return index;
+}
+
+
 
 /*
 --------------------------------------------
-Controls
+NUMBER OF TRAINING POINTS CONTROL
 --------------------------------------------
 */
 
 var sliderNumSamples = document.getElementById("slideNumSamples");
-var output = document.getElementById("slideNumSamplesLabel");
-output.innerHTML = "Number of training datapoints = " + sliderNumSamples.value; // Display the default slider value
+var numsamples_slider = document.getElementById("slideNumSamplesLabel");
+numsamples_slider.innerHTML = "Number of training datapoints = " + sliderNumSamples.value; // Display the default slider value
 
 // Update the current slider value (each time you drag the slider handle)
 sliderNumSamples.oninput = function() {
     nData = this.value;
-    output.innerHTML = "Number of training datapoints = " + nData;
+    numsamples_slider.innerHTML = "Number of training datapoints = " + nData;
     refresh();
 }
 
+/*
+--------------------------------------------
+NOISE CONTROL
+--------------------------------------------
+*/
+// Note: since the slider is restricted to whole numbers, we have to convert from 0 to 100:
 
+var sliderNoise = document.getElementById("slideNoise");
+var noise_slider = document.getElementById("slideNoiseLabel");
+sliderNoise.value = Math.round(noise_std / NOISE_MAX * 100); 
+noise_slider.innerHTML = "Noise std = " + noise_std; // Display the default slider value
+
+// Update the current slider value (each time you drag the slider handle)
+sliderNoise.oninput = function() {
+    noise_std = this.value /100 * NOISE_MAX;
+    noise_slider.innerHTML = "Noise std = " + noise_std;
+
+    // Update the plot
+    recalculate_noise()
+    update_training_circles();
+    update_error_line();
+}

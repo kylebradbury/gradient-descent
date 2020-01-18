@@ -29,14 +29,21 @@
         <div class="col-md-2">
           <button onclick="refresh()">Draw new data</button>
         </div>
-        <form>
           <div class="col-md-10">
-            <div class="slidecontainer">
-              <label for="slideNumSamples" id="slideNumSamplesLabel">Number of training datapoints</label>
-              <input type="range" min="1" max="100" value="9" class="form-control-range" id="slideNumSamples">
-            </div>
+            <form>
+              <div class="slidecontainer">
+                <label for="slideNumSamples" id="slideNumSamplesLabel"></label>
+                <input type="range" min="1" max="100" value="9" class="form-control-range" id="slideNumSamples">
+              </div>
+            </form>
+            <br>
+            <form>
+              <div class="slidecontainer">
+                <label for="slideNoise" id="slideNoiseLabel"></label>
+                <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideNoise">
+              </div>
+            </form>
           </div>
-        </form>
       </div>
     </div>
     

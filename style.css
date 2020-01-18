@@ -94,8 +94,22 @@ text.key-text{
   width: 200px;
 }
 
+/* Style for the target function */
+#target {
+  stroke: grey;
+  stroke-opacity: 0.5;
+  stroke-width: 2;
+}
+
 /* Style for the hypothesis function */
 #hypothesis {
   stroke: red;
-  stroke-opacity: 0.2;
+  stroke-opacity: 0.5;
+  stroke-width: 2;
+}
+
+.rect-for-mouseover {
+  fill: none;
+  /*cursor: crosshair;*/
+  pointer-events: all;
 }
