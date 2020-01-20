@@ -103,7 +103,7 @@ text.key-text{
 
 /* Style for the hypothesis function */
 #hypothesis {
-  stroke: red;
+  stroke: orange;
   stroke-opacity: 0.5;
   stroke-width: 2;
 }
@@ -112,4 +112,13 @@ text.key-text{
   fill: none;
   /*cursor: crosshair;*/
   pointer-events: all;
+}
+
+/* Points that are being dragged on the function plot */
+.dragging {
+  /*fill: green;*/
+}
+
+.dragged {
+  /*stroke-color: none;*/
 }

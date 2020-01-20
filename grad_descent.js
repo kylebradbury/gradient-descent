@@ -4,6 +4,24 @@ Author: Kyle Bradbury
 Idea adapted from: http://bl.ocks.org/WilliamQLiu/76ae20060e19bf42d774
 */
 
+// TODO LIST FOR PROJECT:
+// [X] Button to generate new data
+// [X] Slider to adjust number of data points
+// [X] Can hover over a point along the Error plot and display the hypothesis function
+// [X] Can click on the error plot to lock in point
+// [X] Can move the training data points
+// [X] Update dot when sliders or button pressed
+// [X] Create slider to adjust noise level
+// [X] Color the points according to model to judge fit
+// [ ] Can delete the training data points
+// [ ] Add legend
+// [ ] Calculate gradient
+// [ ] Move in the direction of gradient (batch)
+// [ ] Take step with SGD
+// [ ] Checkbox to show/hide target model
+// [ ] Checkbox to show/hide target error point
+// [ ] Checkbox to color the dots (or not)
+// [ ] Button to turn on plot for the hypothesis function
 
 /*
 --------------------------------------------
@@ -33,6 +51,12 @@ function sum_squared_error(data,f) {
     }, 0)
 }
 
+function square_error(data,f) {
+    return data.map(function(d){
+        return Math.pow(f(d.x) - d.y,2) ;
+    })
+}
+
 function f_generator(w) {
     return function(x) {
         return Math.sin(w*x) ; 
@@ -58,10 +82,6 @@ function rand_array(maxval,N) {
     return rand_vals;
 }
 
-// function add_noise(x,std_noise) {
-//     return x.map(x => x + randn()*std_noise) ;
-// }
-
 // Create a representation of the true function
 function gen_function_data(f,n,xmax) {
     let x = linspace(0,xmax,n) ;
@@ -86,15 +106,6 @@ function gen_noise(N) {
     return noise ;
 }
 
-// // Create the training data
-// function gen_corrupted_data(f,N,xmax,noise_std) {
-//     let x = rand_array(xmax,N) ;
-//     x.sort();
-//     let y = x.map(v => f(v)) ;
-//     y = add_noise(y, noise_std) ;
-//     return make_d3_ready({x:x, y:y}) ;
-// }
-
 function corrupt_data(raw_function,noise) {
     let output = [];
     N = raw_function.length;
@@ -103,12 +114,6 @@ function corrupt_data(raw_function,noise) {
     }
     return output 
 }
-
-// function gen_corrupted_data(f,N,xmax,noise_std) {
-//     let raw_function = gen_function_data_random_x(f,N,xmax);
-//     let noise = gen_noise(N)
-//     return corrupt_data(raw_function, noise);
-// }
 
 function make_d3_ready(data) {
     let d3data = []; 
@@ -134,13 +139,16 @@ let XMAX = Math.PI,
 
 // Define parameters that may change interactively
 let nData = 9,
-    w_hat = 6,
-    noise_std = 0.25;
-    
-// let target = gen_function_data(f,nTarget,XMAX),
-//     data = gen_corrupted_data(f,nData,XMAX,noise_std),
-//     weights = linspace(WMIN,WMAX,nWeights),
-//     error_data = mse(weights,data);
+    w_hat = 10,
+    selected_weight_index = [],
+    noise_std = 0.25,
+    hypothesis_locked = false;
+
+// Parameters for plots
+var w = 400,
+    h = 400,
+    margin = { top: 40, right: 20, bottom: 30, left: 40 };
+let radius = 5;
 
 function new_scenario() {
     let target = gen_function_data(f,nTarget,XMAX),
@@ -150,6 +158,7 @@ function new_scenario() {
         data = corrupt_data(noisefree_data, noise);
         weights = linspace(WMIN,WMAX,nWeights),
         error_data = mse(weights,data),
+        pointwise_error = square_error(data, f_generator(w_hat))
         hypothesis = [] ;
         if (w_hat !== '') {
             hypothesis = gen_function_data(f_generator(w_hat),nTarget,XMAX)  
@@ -161,10 +170,12 @@ function new_scenario() {
             data:data, 
             weights:weights, 
             error_data:error_data,
+            pointwise_error:pointwise_error,
             hypothesis:hypothesis};
 }
 
 function recalculate_error() {
+    recalculate_pointwise_error();
     state.error_data = mse(state.weights,state.data);
 }
 
@@ -177,7 +188,9 @@ function recalculate_hypothesis() {
     state.hypothesis = gen_function_data(f_generator(w_hat),nTarget,XMAX)  
 }
 
-var state = new_scenario();
+function recalculate_pointwise_error() {
+    state.pointwise_error = square_error(state.data, f_generator(w_hat))
+}
 
 function refresh() {
     state = new_scenario();
@@ -187,31 +200,11 @@ function refresh() {
     update_training_circles();  
 }
 
-// [X] Button to generate new data
-// [X] Slider to adjust number of data points
-// [ ] Button to turn on plot for the hypothesis function
-// [ ] Can hover over a point along the Error plot and display the hypothesis function
-// [ ] Can click on the error plot to lock in point
-// [X] Can move the training data points
-// [ ] Can delete the training data points
-// [ ] Add legend
-// [ ] Calculate gradient
-// [ ] Move in the direction of gradient (batch)
-// [ ] Take step with SGD
-// [X] Create slider to adjust noise level
-// [ ] Color the points according to model to judge fit
-// [ ] Checkbox to show/hide target model
-// [ ] Checkbox to show/hide target error point
-
 /*
 --------------------------------------------
 PLOT DATA, TARGET, AND ESTIMATE
 --------------------------------------------
 */
-var w = 400,
-    h = 400,
-    margin = { top: 40, right: 20, bottom: 30, left: 40 };
-let radius = 5;
 
 // We're passing in a function in d3.max to tell it what we're maxing (x value)
 var xScale = d3.scaleLinear()
@@ -231,6 +224,11 @@ var yAxis = d3.axisLeft(yScale);
 var valueline = d3.line()
     .x(function(d) { return xScale(d.x); })
     .y(function(d) { return yScale(d.y); });
+
+// Define the color scale
+var error_color_scale = d3.scaleLinear()
+    .domain([0,2])
+    .range(["orange", "black"])
 
 var svg = d3.select("#plot_function")
     .append("svg")
@@ -266,7 +264,6 @@ svg.append("text")
     .text("f(x,w)");
 
 
-
 function update_target_line() {
     svg.selectAll("path.targetline").remove()
 
@@ -296,18 +293,19 @@ function update_training_circles() {
         .attr("cx", function(d) { return xScale(d.x); })
         .attr("cy", function(d) { return yScale(d.y); })
         .attr("r", radius)
+        .attr("index", function(d,i) {return i;})
+        .attr("fill", function(d,i){ 
+            return error_color_scale(state.pointwise_error[i]); 
+        })
         .call(d3.drag()
                   .on("start", dragstarted)
                   .on("drag", dragged)
                   .on("end", dragended)
-                  );
+                  )
+        .raise();
         // .on("mouseover", handleMouseOver)
         // .on("mouseout", handleMouseOut)
 }
-
-update_target_line();
-update_hypothesis_line();
-update_training_circles();
 
 /*
 --------------------------------------------
@@ -316,15 +314,19 @@ DRAG TO CHANGE DATA
 */
 
 function dragstarted(d) {
-    d3.select(this).attr("fill", "orange");
+    let index = d3.select(this).attr("index") ;
     d.x = d3.event.x;
     d.y = d3.event.y;
+    d3.select(this).attr("class", "dragging")
+        .attr("r", radius * 1.5)
+        .raise();
 }
 
 function dragged(d,i) {
     // Use d3.mouse instead of d3.event.x to work around issues with scaling the data
     var coords = d3.mouse(this);
-    
+    let index = d3.select(this).attr("index") ;
+
     // Update the datapoint to match the new position
     d.x = xScale.invert(coords[0]);
     d.y = yScale.invert(coords[1]);
@@ -335,47 +337,36 @@ function dragged(d,i) {
     if (d.y < YMIN) {d.y = YMIN;}
     if (d.y > YMAX) {d.y = YMAX;}
 
+    // Redraw the error functions based on the new data
+    recalculate_error();
+    update_error_line();
+
     d3.select(this)
         .attr("cx", xScale(d.x))
-        .attr("cy", yScale(d.y));
-
-    // Redraw the error functions based on the new data
-    recalculate_error()
-    update_error_line();
+        .attr("cy", yScale(d.y))
+        .attr("r", radius * 1.5)
+        .attr("fill", function(d,i){ 
+            return error_color_scale(state.pointwise_error[index]); 
+        })
+        .raise();
 }
 
 function dragended(d) {
-    d3.select(this).attr("fill", 'black');
+    d3.select(this).attr("class", 'dragged')
+        .attr("r", radius);
 }
 
 
 function handleMouseOver(d, i) {  // Add interactivity
-
-    // Use D3 to select element, change color and size
     d3.select(this)
-        .attr("fill", "orange")
-        .attr("r", radius * 1.2)
+        .attr("r", radius * 1.5)
 
-    // Specify where to put label of text
-    // svg.append("text")
-    //     .attr("id", "id" + i)  // Create an id for text so we can select it later for removing on mouseout
-    //     .attr("x", function() { return xScale(d.x) - 30; })
-    //     .attr("y", function() { return yScale(d.y) - 15; })
-    //     .text(function() {
-    //         return [d.x.toFixed(2), d.y.toFixed(2)];  // Value of the text
-    //     });
 }
 
 function handleMouseOut(d, i) {
-    // Use D3 to select element, change color back to normal
     d3.select(this)
-        .attr("fill", "black")
         .attr("r", radius);
-
-    // Select text by id and then remove
-    // d3.select("#id" + i).remove();  // Remove text location
 }
-
 
 /*
 --------------------------------------------
@@ -439,7 +430,8 @@ svg_ep.append("rect")
         .attr("class", "rect-for-mouseover")
         .attr("width", w)
         .attr("height", h)
-        .on("mousemove", mousemoved);
+        .on("mousemove", mousemoved)
+        .on("click", error_plot_clicked);
 
 function update_error_line() {
     svg_ep.selectAll("path.line").remove()
@@ -447,22 +439,13 @@ function update_error_line() {
     svg_ep.append("path")
         .attr("class", "line")
         .attr("d", valueline_ep(state.error_data));
+
+    update_error_point()
 }
-
-update_error_line();
-
 
 // Create a single circle for highlighting selected point
 svg_ep.append("circle")
     .attr("id","error_point");
-
-// svg_ep.selectAll("circle")
-//     .data(error_data)
-//     .enter()
-//     .append("circle")
-//     .attr("cx", function(d) { return xScale_ep(d.x); })
-//     .attr("cy", function(d) { return yScale_ep(d.y); })
-//     .attr("r", radius);  // Get attributes from circleAttrs var
 
 /*
 --------------------------------------------
@@ -470,33 +453,50 @@ MOUSE HOVER INTERACTION FOR ERROR PLOT
 --------------------------------------------
 */
 
+function error_plot_clicked() {
+    hypothesis_locked = !hypothesis_locked;
+}
+
 function mousemoved() {
-    var m = d3.mouse(this);
-    index = get_nearest_x(m);
+    if (hypothesis_locked) {return;}
+    var coord = d3.mouse(this);
+    selected_weight_index = get_nearest_x(coord[0], true);
 
     // remove_existing_highlight();
-    select_weight(index);
+    select_weight(selected_weight_index);
 }
 
 function select_weight(index) {
     let d = state.error_data[index];
     w_hat = state.weights[index];
     d3.select('#error_point')
-        .attr("fill", "red")
+        .attr("fill", "orange")
         .attr("r", radius)
         .attr("cx", xScale_ep(d.x))
         .attr("cy", yScale_ep(d.y))
         .attr('weight_index',index)
         .raise();
-    recalculate_hypothesis()
+    recalculate_hypothesis();
     update_hypothesis_line();
+    recalculate_pointwise_error();
+    update_training_circles();
 }
 
-function get_nearest_x(m) {
+function update_error_point() {
+    let d = state.error_data[selected_weight_index];
+    d3.select('#error_point')
+        .attr("cx", xScale_ep(d.x))
+        .attr("cy", yScale_ep(d.y))
+        .raise();
+}
+
+function get_nearest_x(x,scale) {
     var mindist = 10e6;
     var dist = [];
     var index = [];
-    var x = xScale_ep.invert(m[0]);
+    if (scale) {
+        x = xScale_ep.invert(x);    
+    } 
     state.error_data.forEach(function(d,i) {
         dist = Math.abs(d.x - x);
         if (dist < mindist) {
@@ -507,11 +507,9 @@ function get_nearest_x(m) {
     return index;
 }
 
-
-
 /*
 --------------------------------------------
-NUMBER OF TRAINING POINTS CONTROL
+NUMBER OF TRAINING POINTS CONTROL SLIDER
 --------------------------------------------
 */
 
@@ -528,7 +526,7 @@ sliderNumSamples.oninput = function() {
 
 /*
 --------------------------------------------
-NOISE CONTROL
+NOISE CONTROL SLIDER
 --------------------------------------------
 */
 // Note: since the slider is restricted to whole numbers, we have to convert from 0 to 100:
@@ -548,3 +546,21 @@ sliderNoise.oninput = function() {
     update_training_circles();
     update_error_line();
 }
+
+
+/*
+--------------------------------------------
+INITIATE THE PLOTS
+--------------------------------------------
+*/
+var state = new_scenario();
+
+update_target_line();
+update_hypothesis_line();
+update_training_circles();
+
+selected_weight_index = get_nearest_x(w_hat);
+select_weight(selected_weight_index);
+
+update_error_line();
+
