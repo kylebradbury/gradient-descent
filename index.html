@@ -27,7 +27,11 @@
         </div>
       <div class="row">
         <div class="col-md-2">
-          <button onclick="refresh()">Draw new data</button>
+            <button onclick="refresh()">Draw new data</button><br>
+            <button onclick="update_for_sgd()">SGD Update</button><br>
+            <button onclick="autoupdate_for_sgd()">Star auto update sgd</button><br>
+            <button id="sgd_mode_toggle" onclick="toggle_sgd_mode()">Toggle Mode: minibatch</button>
+            <p id='learningrate'></p>
         </div>
           <div class="col-md-10">
             <form>
@@ -41,6 +45,20 @@
               <div class="slidecontainer">
                 <label for="slideNoise" id="slideNoiseLabel"></label>
                 <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideNoise">
+              </div>
+            </form>
+            <br>
+            <form>
+              <div class="slidecontainer">
+                <label for="slideLearningRate" id="slideLearningRateLabel"></label>
+                <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideLearningRate">
+              </div>
+            </form>
+            <br>
+            <form>
+              <div class="slidecontainer">
+                <label for="slideBatchSize" id="slideBatchSizeLabel"></label>
+                <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideBatchSize">
               </div>
             </form>
           </div>

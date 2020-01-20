@@ -22,6 +22,9 @@ Idea adapted from: http://bl.ocks.org/WilliamQLiu/76ae20060e19bf42d774
 // [ ] Checkbox to show/hide target error point
 // [ ] Checkbox to color the dots (or not)
 // [ ] Button to turn on plot for the hypothesis function
+// [ ] Change the target function
+// [ ] When performing SGD, show the points that are selected as part of the batch
+//     and the corresponding error function just for that subset
 
 /*
 --------------------------------------------
@@ -60,7 +63,13 @@ function square_error(data,f) {
 function f_generator(w) {
     return function(x) {
         return Math.sin(w*x) ; 
+        // return (w*x - 1.5)**2
     }
+}
+
+function f_grad(d,w) {
+    return (Math.sin(w*d.x) - d.y)*Math.cos(w*d.x)*d.x;
+    // return (w*d.x-1.5)*d.x
 }
 
 function rand() {
@@ -82,14 +91,14 @@ function rand_array(maxval,N) {
     return rand_vals;
 }
 
-// Create a representation of the true function
+// Create a representation of the true function at equally spaced x values
 function gen_function_data(f,n,xmax) {
     let x = linspace(0,xmax,n) ;
     let y = x.map(v => f(v)) ;
     return make_d3_ready({x:x, y:y}) ;
 }
 
-// Create the noise-free data
+// Create the noise-free data but with random values for x
 function gen_function_data_random_x(f,N,xmax) {
     let x = rand_array(xmax,N) ;
     x.sort();
@@ -106,6 +115,7 @@ function gen_noise(N) {
     return noise ;
 }
 
+// Add noise to "clean" data
 function corrupt_data(raw_function,noise) {
     let output = [];
     N = raw_function.length;
@@ -115,12 +125,112 @@ function corrupt_data(raw_function,noise) {
     return output 
 }
 
+// Convert the arrays into arrays of objects with (x,y) pairs
 function make_d3_ready(data) {
     let d3data = []; 
     for (let i = 0; i < data.x.length; i++) {
         d3data.push({x:data.x[i], y:data.y[i]}) ;
     }
     return d3data;
+}
+
+// Calculate the gradient of the loss function based on the training data and f_generator
+// Assumes the case where f(w,x) = sin(w*x)
+// Here data is an array of (x,y) pair objects
+function gradient() {
+    let w = w_hat,
+        grad = 0,
+        cgrad = [],
+        d = [];
+    let sample_indices = get_next_batch(),
+        N = sample_indices.length;
+    sample_indices.forEach(function(i){
+        d = state.data[i];
+        grad = grad + f_grad(d,w);
+    })
+    let full_gradient = (2 / N) * grad;
+    // console.log("G = " + full_gradient);
+    return full_gradient;
+}
+
+function get_next_batch() {
+    let N = state.data.length ;
+    if (sgd_mode == 'batch') {
+        // Return a list of all the indices
+        return get_range(N);
+    } else if (sgd_mode == 'minibatch') {
+        // Check if the pool is empty: if so, refill it
+        return draw_indices(batchsize) ;
+    }
+}
+
+function get_range(N) {
+    let list = [];
+    for (let i = 0; i < N; i++) {
+        list.push(i);
+    }
+    return list;
+}
+
+function draw_indices(N) {
+    let batch = [];
+    for (let i = 0; i < N; i++) {
+        // If there are no more indices, refill them
+        let nAvailableIndices = indices_sgd.length;
+        if (nAvailableIndices == 0) {
+            indices_sgd = get_range(state.data.length);
+            nAvailableIndices = indices_sgd.length;
+        }
+        // Draw one value and remove it from the index
+        let randomIndex = Math.floor(Math.random()*nAvailableIndices); 
+        cindex = indices_sgd.splice(randomIndex,1)[0];
+        batch.push(cindex);
+    }
+    return batch;
+}
+
+function sgd_update() {
+    // Get the gradient
+    let grad = gradient() ;
+
+    // Calculate new value for w
+    // console.log(-learning_rate * grad);
+    w_hat = w_hat - learning_rate * grad;
+
+    // Keep the selection within bounds on the plot
+    if (w_hat < WMIN) {
+        w_hat = WMIN ;
+    } else if (w_hat > WMAX) {
+        w_hat = WMAX ;
+    }
+
+    // Reduce the learning rate over time
+    learning_rate = 0.9999*learning_rate;
+    console.log(learning_rate);
+}
+
+function adam_update() {
+    // Get the gradient
+    let g = gradient() ;
+    let mt = b1 * m + (1-b1)*g;
+    let vt = b2 * v + (1-b2)*g**2;
+    t = t + 1 ;
+    mt = mt/(1-b1**t) ;
+    vt = vt/(1-b2**t) ;
+    w_hat = w_hat - learning_rate*mt/(Math.sqrt(vt) + 10**(-8));
+
+    // Keep the selection within bounds on the plot
+    if (w_hat < WMIN) {
+        w_hat = WMIN ;
+    } else if (w_hat > WMAX) {
+        w_hat = WMAX ;
+    }
+
+    console.log(w_hat);
+
+    // Update parameters for next iteration
+    m = mt;
+    v = vt;
 }
 
 // Define variables that will not be changed interactively
@@ -131,18 +241,40 @@ let XMAX = Math.PI,
     WMAX = 30,
     EMIN = 0,
     EMAX = 2.5,
+    NMAX = 1000,
     nTarget = 601,
     nWeights = 601,
     true_weight = 5,
     NOISE_MAX = 0.5,
+    LR_MAX = 10,
     f = f_generator(true_weight);
 
 // Define parameters that may change interactively
-let nData = 9,
+let nData = 500,
     w_hat = 10,
+    w_plot = 10,
     selected_weight_index = [],
     noise_std = 0.25,
-    hypothesis_locked = false;
+    hypothesis_locked = false,
+    indices_sgd = [],
+    sgd_mode = 'minibatch',
+    batchsize = 10
+    learning_rate = 0.5,
+    sgd_timer_interval = [],
+    interval_set = false;
+
+// Define adam parameters
+let m = 0,
+    v = 0,
+    t = 0,
+    b1 = 0.99,
+    b2 = 0.99999;
+
+function adam_reset() {
+    m = 0;
+    v = 0;
+    t = 0;
+}
 
 // Parameters for plots
 var w = 400,
@@ -445,7 +577,8 @@ function update_error_line() {
 
 // Create a single circle for highlighting selected point
 svg_ep.append("circle")
-    .attr("id","error_point");
+    .attr("id","error_point")
+    .on("click", error_plot_clicked);
 
 /*
 --------------------------------------------
@@ -457,10 +590,36 @@ function error_plot_clicked() {
     hypothesis_locked = !hypothesis_locked;
 }
 
+// function mousemoved() {
+//     if (hypothesis_locked) {return;}
+//     var coord = d3.mouse(this);
+//     selected_weight_index = get_nearest_x(coord[0], true);
+
+//     // remove_existing_highlight();
+//     select_weight(selected_weight_index);
+// }
+
+// function select_weight(index) {
+//     let d = state.error_data[index];
+//     w_hat = state.weights[index];
+//     d3.select('#error_point')
+//         .attr("fill", "orange")
+//         .attr("r", radius)
+//         .attr("cx", xScale_ep(d.x))
+//         .attr("cy", yScale_ep(d.y))
+//         .attr('weight_index',index)
+//         .raise();
+//     recalculate_hypothesis();
+//     update_hypothesis_line();
+//     recalculate_pointwise_error();
+//     update_training_circles();
+// }
+
 function mousemoved() {
     if (hypothesis_locked) {return;}
     var coord = d3.mouse(this);
-    selected_weight_index = get_nearest_x(coord[0], true);
+    w_hat = xScale_ep.invert(coord[0]);
+    selected_weight_index = get_nearest_x(w_hat);
 
     // remove_existing_highlight();
     select_weight(selected_weight_index);
@@ -468,11 +627,11 @@ function mousemoved() {
 
 function select_weight(index) {
     let d = state.error_data[index];
-    w_hat = state.weights[index];
+    // w_hat = state.weights[index];
     d3.select('#error_point')
         .attr("fill", "orange")
         .attr("r", radius)
-        .attr("cx", xScale_ep(d.x))
+        .attr("cx", xScale_ep(w_hat))
         .attr("cy", yScale_ep(d.y))
         .attr('weight_index',index)
         .raise();
@@ -490,13 +649,10 @@ function update_error_point() {
         .raise();
 }
 
-function get_nearest_x(x,scale) {
+function get_nearest_x(x) {
     var mindist = 10e6;
     var dist = [];
     var index = [];
-    if (scale) {
-        x = xScale_ep.invert(x);    
-    } 
     state.error_data.forEach(function(d,i) {
         dist = Math.abs(d.x - x);
         if (dist < mindist) {
@@ -507,20 +663,76 @@ function get_nearest_x(x,scale) {
     return index;
 }
 
+// function get_nearest_x(x,scale) {
+//     var mindist = 10e6;
+//     var dist = [];
+//     var index = [];
+//     if (scale) {
+//         x = xScale_ep.invert(x);    
+//     } 
+//     state.error_data.forEach(function(d,i) {
+//         dist = Math.abs(d.x - x);
+//         if (dist < mindist) {
+//             index = i;
+//             mindist = dist ;
+//         }
+//     })
+//     return index;
+// }
+
+function update_for_sgd() {
+    sgd_update()
+    // adam_update();
+    recalculate_hypothesis();
+    update_hypothesis_line();
+    recalculate_pointwise_error();
+    update_training_circles();
+    selected_weight_index = get_nearest_x(w_hat);
+    select_weight(selected_weight_index);
+    // console.log('w = ' + w_hat);
+}
+
+
+function autoupdate_for_sgd() {
+    if (interval_set == true) {
+        window.clearInterval(sgd_timer_interval);
+        interval_set = false;
+    } else {
+        sgd_timer_interval = window.setInterval(update_for_sgd,10) ;    
+        interval_set = true;
+    }
+    
+}
+
+function toggle_sgd_mode() {
+    let buttonlabel = document.getElementById("sgd_mode_toggle");
+    if (sgd_mode == 'batch') {
+        sgd_mode = 'minibatch';
+        buttonlabel.innerHTML = 'Toggle Mode: ' + sgd_mode ;
+    } else if (sgd_mode == 'minibatch') {
+        sgd_mode = 'batch';
+        buttonlabel.innerHTML = 'Toggle Mode: ' + sgd_mode ;
+    }
+}
+
+
 /*
 --------------------------------------------
 NUMBER OF TRAINING POINTS CONTROL SLIDER
 --------------------------------------------
 */
+// Note: since the slider is restricted to whole numbers, we have to convert from 0 to 100:
 
 var sliderNumSamples = document.getElementById("slideNumSamples");
 var numsamples_slider = document.getElementById("slideNumSamplesLabel");
-numsamples_slider.innerHTML = "Number of training datapoints = " + sliderNumSamples.value; // Display the default slider value
+sliderNumSamples.value = Math.round(nData / NMAX * 100); 
+numsamples_slider.innerHTML = "Number of training datapoints = " + nData; // Display the default slider value
 
 // Update the current slider value (each time you drag the slider handle)
 sliderNumSamples.oninput = function() {
-    nData = this.value;
+    nData = Math.round(this.value /100 * NMAX);
     numsamples_slider.innerHTML = "Number of training datapoints = " + nData;
+    indices_sgd = []
     refresh();
 }
 
@@ -547,6 +759,43 @@ sliderNoise.oninput = function() {
     update_error_line();
 }
 
+/*
+--------------------------------------------
+LEARNING RATE CONTROL SLIDER
+--------------------------------------------
+*/
+// Note: since the slider is restricted to whole numbers, we have to convert from 0 to 100:
+
+var sliderLearningRate = document.getElementById("slideLearningRate");
+var learning_rate_slider = document.getElementById("slideLearningRateLabel");
+sliderLearningRate.value = Math.round(learning_rate / LR_MAX * 100); 
+learning_rate_slider.innerHTML = "Learning rate = " + learning_rate; // Display the default slider value
+
+// Update the current slider value (each time you drag the slider handle)
+sliderLearningRate.oninput = function() {
+    learning_rate = this.value /100 * LR_MAX;
+    learning_rate_slider.innerHTML = "Learning rate = " + learning_rate.toFixed(2);
+}
+
+/*
+--------------------------------------------
+BATCH SIZE CONTROL SLIDER
+--------------------------------------------
+*/
+// Note: since the slider is restricted to whole numbers, we have to convert from 0 to 100:
+
+var sliderBatchSize = document.getElementById("slideBatchSize");
+var batch_size_slider = document.getElementById("slideBatchSizeLabel");
+sliderBatchSize.value = Math.round(batchsize / nData * 100); 
+batch_size_slider.innerHTML = "Batch size = " + batchsize; // Display the default slider value
+
+// Update the current slider value (each time you drag the slider handle)
+sliderBatchSize.oninput = function() {
+    batchsize = Math.round(this.value /100 * nData);
+    if (batchsize < 1) {batchsize = 1;}
+    batch_size_slider.innerHTML = "Batch size = " + batchsize;
+    indices_sgd = []
+}
 
 /*
 --------------------------------------------
