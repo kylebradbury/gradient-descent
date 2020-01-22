@@ -13,18 +13,26 @@ Idea adapted from: http://bl.ocks.org/WilliamQLiu/76ae20060e19bf42d774
 // [X] Update dot when sliders or button pressed
 // [X] Create slider to adjust noise level
 // [X] Color the points according to model to judge fit
+// [X] Calculate gradient
+// [X] Move in the direction of gradient (batch)
+// [X] Take step with SGD
+// [X] Checkbox to show/hide target model
 // [ ] Can delete the training data points
 // [ ] Add legend
-// [ ] Calculate gradient
-// [ ] Move in the direction of gradient (batch)
-// [ ] Take step with SGD
-// [ ] Checkbox to show/hide target model
 // [ ] Checkbox to show/hide target error point
 // [ ] Checkbox to color the dots (or not)
 // [ ] Button to turn on plot for the hypothesis function
 // [ ] Change the target function
 // [ ] When performing SGD, show the points that are selected as part of the batch
 //     and the corresponding error function just for that subset
+// [ ] Make learning rate decay a function of epoch
+// [ ] Show the direction of the gradient for batch and the current minibatch
+// [ ] Slider to adjust target weight
+// [ ] Be able to switch between target function/data combinations
+// [ ] Add target line at true parameter value
+// [ ] Highlight which specific points were used in the SGD update
+// [ ] Toggle for SGD batch error function plotting
+// [ ] Show the last point for the SGD update to be able to see the progress more easily
 
 /*
 --------------------------------------------
@@ -63,7 +71,6 @@ function square_error(data,f) {
 function f_generator(w) {
     return function(x) {
         return Math.sin(w*x) ; 
-        // return (w*x - 1.5)**2
     }
 }
 
@@ -102,11 +109,13 @@ function gen_function_data(f,n,xmax) {
 function gen_function_data_random_x(f,N,xmax) {
     let x = rand_array(xmax,N) ;
     x.sort();
+    // let x = linspace(0,xmax,N) ;
     let y = x.map(v => f(v)) ;
     
     return make_d3_ready({x:x, y:y}) ;
 }
 
+// Generate an array of normally distributed noise
 function gen_noise(N) {
     let noise = [];
     for (let i = 0; i < N; i++) {
@@ -125,7 +134,7 @@ function corrupt_data(raw_function,noise) {
     return output 
 }
 
-// Convert the arrays into arrays of objects with (x,y) pairs
+// Convert the arrays into arrays of objects with (x,y) pairs: [{x:x1, y:y1},...]
 function make_d3_ready(data) {
     let d3data = []; 
     for (let i = 0; i < data.x.length; i++) {
@@ -142,14 +151,15 @@ function gradient() {
         grad = 0,
         cgrad = [],
         d = [];
-    let sample_indices = get_next_batch(),
-        N = sample_indices.length;
+    
+    sample_indices = get_next_batch();
+    let N = sample_indices.length;
+
     sample_indices.forEach(function(i){
         d = state.data[i];
         grad = grad + f_grad(d,w);
     })
-    let full_gradient = (2 / N) * grad;
-    // console.log("G = " + full_gradient);
+    full_gradient = (2 / N) * grad;
     return full_gradient;
 }
 
@@ -180,6 +190,7 @@ function draw_indices(N) {
         if (nAvailableIndices == 0) {
             indices_sgd = get_range(state.data.length);
             nAvailableIndices = indices_sgd.length;
+            epoch++ ;
         }
         // Draw one value and remove it from the index
         let randomIndex = Math.floor(Math.random()*nAvailableIndices); 
@@ -206,75 +217,80 @@ function sgd_update() {
 
     // Reduce the learning rate over time
     learning_rate = 0.9999*learning_rate;
-    console.log(learning_rate);
+    // console.log(learning_rate);
 }
 
-function adam_update() {
-    // Get the gradient
-    let g = gradient() ;
-    let mt = b1 * m + (1-b1)*g;
-    let vt = b2 * v + (1-b2)*g**2;
-    t = t + 1 ;
-    mt = mt/(1-b1**t) ;
-    vt = vt/(1-b2**t) ;
-    w_hat = w_hat - learning_rate*mt/(Math.sqrt(vt) + 10**(-8));
-
-    // Keep the selection within bounds on the plot
-    if (w_hat < WMIN) {
-        w_hat = WMIN ;
-    } else if (w_hat > WMAX) {
-        w_hat = WMAX ;
-    }
-
-    console.log(w_hat);
-
-    // Update parameters for next iteration
-    m = mt;
-    v = vt;
+function get_batch_error() {
+    data = get_batch_data();
+    batch_error = mse(state.weights,data);
 }
+
+function get_batch_data() {
+    data = [];
+    sample_indices.forEach(function(i) {
+        data.push(state.data[i])
+    })
+    return data;
+}
+
+// function adam_update() {
+//     // Get the gradient
+//     let g = gradient() ;
+//     let mt = b1 * m + (1-b1)*g;
+//     let vt = b2 * v + (1-b2)*g**2;
+//     t = t + 1 ;
+//     mt = mt/(1-b1**t) ;
+//     vt = vt/(1-b2**t) ;
+//     w_hat = w_hat - learning_rate*mt/(Math.sqrt(vt) + 10**(-8));
+
+//     // Keep the selection within bounds on the plot
+//     if (w_hat < WMIN) {
+//         w_hat = WMIN ;
+//     } else if (w_hat > WMAX) {
+//         w_hat = WMAX ;
+//     }
+
+//     console.log(w_hat);
+
+//     // Update parameters for next iteration
+//     m = mt;
+//     v = vt;
+// }
 
 // Define variables that will not be changed interactively
 let XMAX = Math.PI,
     YMIN = -1.5, 
     YMAX = 1.5,
     WMIN = 0,
-    WMAX = 30,
+    WMAX = 15,
     EMIN = 0,
     EMAX = 2.5,
-    NMAX = 1000,
+    NMAX = 500,
     nTarget = 601,
     nWeights = 601,
     true_weight = 5,
     NOISE_MAX = 0.5,
-    LR_MAX = 10,
+    LR_MAX = 1,
     f = f_generator(true_weight);
 
 // Define parameters that may change interactively
-let nData = 500,
+let nData = 100,
     w_hat = 10,
-    w_plot = 10,
     selected_weight_index = [],
     noise_std = 0.25,
     hypothesis_locked = false,
     indices_sgd = [],
     sgd_mode = 'minibatch',
-    batchsize = 10
+    batchsize = 4,
     learning_rate = 0.5,
     sgd_timer_interval = [],
-    interval_set = false;
+    interval_set = false,
+    epoch = 0,
+    target_visible = true
+    sample_indices = [],
+    full_gradient = 0
+    batch_error = [];
 
-// Define adam parameters
-let m = 0,
-    v = 0,
-    t = 0,
-    b1 = 0.99,
-    b2 = 0.99999;
-
-function adam_reset() {
-    m = 0;
-    v = 0;
-    t = 0;
-}
 
 // Parameters for plots
 var w = 400,
@@ -282,6 +298,20 @@ var w = 400,
     margin = { top: 40, right: 20, bottom: 30, left: 40 };
 let radius = 5;
 
+// // Define adam parameters
+// let m = 0,
+//     v = 0,
+//     t = 0,
+//     b1 = 0.99,
+//     b2 = 0.99999;
+
+// function adam_reset() {
+//     m = 0;
+//     v = 0;
+//     t = 0;
+// }
+
+// Create a new set of all values for the data
 function new_scenario() {
     let target = gen_function_data(f,nTarget,XMAX),
         // data = gen_corrupted_data(f,nData,XMAX,noise_std),
@@ -306,6 +336,15 @@ function new_scenario() {
             hypothesis:hypothesis};
 }
 
+function reset_sgd() {
+    learning_rate = document.getElementById("slideLearningRate").value / 100 * LR_MAX;
+    epoch = 0;
+    document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
+    document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
+    document.getElementById('epoch').innerHTML = "Epoch = " + epoch ;
+    
+}
+
 function recalculate_error() {
     recalculate_pointwise_error();
     state.error_data = mse(state.weights,state.data);
@@ -324,6 +363,7 @@ function recalculate_pointwise_error() {
     state.pointwise_error = square_error(state.data, f_generator(w_hat))
 }
 
+// Draw new data and recalculate component values
 function refresh() {
     state = new_scenario();
     update_error_line();
@@ -565,6 +605,10 @@ svg_ep.append("rect")
         .on("mousemove", mousemoved)
         .on("click", error_plot_clicked);
 
+svg_ep.append("path")
+        .attr("class", "true-weight-line")
+        .attr("d", valueline_ep([{x:true_weight, y:EMIN},{x:true_weight, y:EMAX}]));
+
 function update_error_line() {
     svg_ep.selectAll("path.line").remove()
 
@@ -573,6 +617,14 @@ function update_error_line() {
         .attr("d", valueline_ep(state.error_data));
 
     update_error_point()
+}
+
+function update_batch_error_line() {
+    svg_ep.selectAll("path.batch-error-line").remove()
+
+    svg_ep.append("path")
+        .attr("class", "batch-error-line")
+        .attr("d", valueline_ep(batch_error));
 }
 
 // Create a single circle for highlighting selected point
@@ -590,44 +642,31 @@ function error_plot_clicked() {
     hypothesis_locked = !hypothesis_locked;
 }
 
-// function mousemoved() {
-//     if (hypothesis_locked) {return;}
-//     var coord = d3.mouse(this);
-//     selected_weight_index = get_nearest_x(coord[0], true);
-
-//     // remove_existing_highlight();
-//     select_weight(selected_weight_index);
-// }
-
-// function select_weight(index) {
-//     let d = state.error_data[index];
-//     w_hat = state.weights[index];
-//     d3.select('#error_point')
-//         .attr("fill", "orange")
-//         .attr("r", radius)
-//         .attr("cx", xScale_ep(d.x))
-//         .attr("cy", yScale_ep(d.y))
-//         .attr('weight_index',index)
-//         .raise();
-//     recalculate_hypothesis();
-//     update_hypothesis_line();
-//     recalculate_pointwise_error();
-//     update_training_circles();
-// }
-
 function mousemoved() {
     if (hypothesis_locked) {return;}
     var coord = d3.mouse(this);
     w_hat = xScale_ep.invert(coord[0]);
+    if (w_hat < WMIN) {
+        w_hat = WMIN ;
+    } else if (w_hat > WMAX) {
+        w_hat = WMAX ;
+    }
+
     selected_weight_index = get_nearest_x(w_hat);
 
     // remove_existing_highlight();
     select_weight(selected_weight_index);
+
+    recalculate_hypothesis();
+    update_hypothesis_line();
+    recalculate_pointwise_error();
+    update_training_circles();
 }
 
 function select_weight(index) {
     let d = state.error_data[index];
     // w_hat = state.weights[index];
+
     d3.select('#error_point')
         .attr("fill", "orange")
         .attr("r", radius)
@@ -635,10 +674,7 @@ function select_weight(index) {
         .attr("cy", yScale_ep(d.y))
         .attr('weight_index',index)
         .raise();
-    recalculate_hypothesis();
-    update_hypothesis_line();
-    recalculate_pointwise_error();
-    update_training_circles();
+    
 }
 
 function update_error_point() {
@@ -663,23 +699,6 @@ function get_nearest_x(x) {
     return index;
 }
 
-// function get_nearest_x(x,scale) {
-//     var mindist = 10e6;
-//     var dist = [];
-//     var index = [];
-//     if (scale) {
-//         x = xScale_ep.invert(x);    
-//     } 
-//     state.error_data.forEach(function(d,i) {
-//         dist = Math.abs(d.x - x);
-//         if (dist < mindist) {
-//             index = i;
-//             mindist = dist ;
-//         }
-//     })
-//     return index;
-// }
-
 function update_for_sgd() {
     sgd_update()
     // adam_update();
@@ -690,6 +709,12 @@ function update_for_sgd() {
     selected_weight_index = get_nearest_x(w_hat);
     select_weight(selected_weight_index);
     // console.log('w = ' + w_hat);
+    document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
+    document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
+    document.getElementById('epoch').innerHTML = "Epoch = " + epoch ;
+
+    get_batch_error();
+    update_batch_error_line();
 }
 
 
@@ -698,7 +723,7 @@ function autoupdate_for_sgd() {
         window.clearInterval(sgd_timer_interval);
         interval_set = false;
     } else {
-        sgd_timer_interval = window.setInterval(update_for_sgd,10) ;    
+        sgd_timer_interval = window.setInterval(update_for_sgd,0) ;    
         interval_set = true;
     }
     
@@ -715,6 +740,14 @@ function toggle_sgd_mode() {
     }
 }
 
+function toggle_target() {
+    if (target_visible) {
+        d3.select('#target').attr('visibility','hidden')
+    } else {
+        d3.select('#target').attr('visibility','visible')
+    }
+    target_visible = !target_visible;
+}
 
 /*
 --------------------------------------------

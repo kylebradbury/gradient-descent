@@ -27,11 +27,15 @@
         </div>
       <div class="row">
         <div class="col-md-2">
-            <button onclick="refresh()">Draw new data</button><br>
-            <button onclick="update_for_sgd()">SGD Update</button><br>
-            <button onclick="autoupdate_for_sgd()">Star auto update sgd</button><br>
-            <button id="sgd_mode_toggle" onclick="toggle_sgd_mode()">Toggle Mode: minibatch</button>
-            <p id='learningrate'></p>
+            <button onclick="refresh(); reset_sgd()">Draw new data</button><br>
+            <button onclick="update_for_sgd()">Single SGD Update</button><br>
+            <button onclick="autoupdate_for_sgd()">Toggle Auto SGD</button><br>
+            <button id="sgd_mode_toggle" onclick="toggle_sgd_mode()">Toggle Mode: minibatch</button><br>
+            <button id="reset" onclick="reset_sgd()">Reset learning rate</button><br>
+            <button id="reset" onclick="toggle_target()">Toggle Target Function</button>
+            <p><span id='learningrate'></span><br>
+            <span id='weight'></span><br>
+            <span id='epoch'></span></p>
         </div>
           <div class="col-md-10">
             <form>

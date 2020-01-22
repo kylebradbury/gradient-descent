@@ -122,3 +122,17 @@ text.key-text{
 .dragged {
   /*stroke-color: none;*/
 }
+
+/* True weight value */
+.true-weight-line {
+  stroke: lightgrey;
+  stroke-opacity: 1;
+  stroke-width: 1;
+  stroke-dasharray: 5,5; 
+}
+
+.batch-error-line {
+  stroke: grey;
+  stroke-opacity: 0.5;
+  stroke-width: 1;
+}
