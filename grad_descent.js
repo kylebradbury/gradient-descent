@@ -17,22 +17,30 @@ Idea adapted from: http://bl.ocks.org/WilliamQLiu/76ae20060e19bf42d774
 // [X] Move in the direction of gradient (batch)
 // [X] Take step with SGD
 // [X] Checkbox to show/hide target model
-// [ ] Can delete the training data points
-// [ ] Add legend
-// [ ] Checkbox to show/hide target error point
-// [ ] Checkbox to color the dots (or not)
-// [ ] Button to turn on plot for the hypothesis function
-// [ ] Change the target function
-// [ ] When performing SGD, show the points that are selected as part of the batch
+// [X] Plot the learning curves by epoch
+// [X] Assign the average value of error through the epoch to each epoch
+// [X] Set max number of datapoints to 300
+// [X] When performing SGD, show the points that are selected as part of the batch
 //     and the corresponding error function just for that subset
+// [X] Button to turn on plot for the hypothesis function
+// [X] Add target line at true parameter value
+// [X] Highlight which specific points were used in the SGD update
+// [X] Toggle for SGD batch error function plotting
+
+// [ ] Change the target function
+// [ ] Change the target function
+// [ ] Add legend
+// [ ] Checkbox to color the dots (or not)
 // [ ] Make learning rate decay a function of epoch
-// [ ] Show the direction of the gradient for batch and the current minibatch
-// [ ] Slider to adjust target weight
-// [ ] Be able to switch between target function/data combinations
-// [ ] Add target line at true parameter value
-// [ ] Highlight which specific points were used in the SGD update
-// [ ] Toggle for SGD batch error function plotting
 // [ ] Show the last point for the SGD update to be able to see the progress more easily
+// [ ] Add convergence criterion based on last 10 batches (if the change in x < delta for 10 consecutive batches)
+// [ ] Update minibatch error when a value is moved
+// [ ] Fix toggle for target function (function automatically reappears when new data is drawn)
+
+// May be unnecessary:
+// [ ] Checkbox to show/hide target error point
+// [ ] Slider to adjust target weight
+// [ ] Can delete the training data points
 
 /*
 --------------------------------------------
@@ -54,6 +62,16 @@ function mse(weights,data) {
         return sum_squared_error(data,f_generator(w)) / N ;
     })
     return make_d3_ready({x:weights, y:err}) ;
+}
+
+function get_current_error(weight,data) {
+    let N = data.length;
+    return sum_squared_error(data,f_generator(weight)) / N ;
+}
+
+function save_current_error() {
+    err = get_current_error(w_hat_old,state.data);
+    error_within_epoch.push(err);
 }
 
 function sum_squared_error(data,f) {
@@ -152,10 +170,10 @@ function gradient() {
         cgrad = [],
         d = [];
     
-    sample_indices = get_next_batch();
-    let N = sample_indices.length;
+    batch_indices = get_next_batch();
+    let N = batch_indices.length;
 
-    sample_indices.forEach(function(i){
+    batch_indices.forEach(function(i){
         d = state.data[i];
         grad = grad + f_grad(d,w);
     })
@@ -174,6 +192,7 @@ function get_next_batch() {
     }
 }
 
+// Get values from 0 to N-1 by intervals of 1
 function get_range(N) {
     let list = [];
     for (let i = 0; i < N; i++) {
@@ -182,6 +201,7 @@ function get_range(N) {
     return list;
 }
 
+// Pick a new set of training data indices for the next batch
 function draw_indices(N) {
     let batch = [];
     for (let i = 0; i < N; i++) {
@@ -190,7 +210,7 @@ function draw_indices(N) {
         if (nAvailableIndices == 0) {
             indices_sgd = get_range(state.data.length);
             nAvailableIndices = indices_sgd.length;
-            epoch++ ;
+            new_epoch() ;
         }
         // Draw one value and remove it from the index
         let randomIndex = Math.floor(Math.random()*nAvailableIndices); 
@@ -200,12 +220,33 @@ function draw_indices(N) {
     return batch;
 }
 
+function new_epoch() {
+    epoch++;
+    // console.log(error_within_epoch)
+    if (epoch <= EPOCH_MAX) {
+        let epoch_mean_error = mean(error_within_epoch) ;
+        error_by_epoch.push({x:epoch-1,y:epoch_mean_error});
+        error_within_epoch = [];
+        update_learning_curve();
+    }
+}
+
+function mean(x) {
+    sumx = x.reduce(function(acc,val){
+        return acc + val;
+    },0)
+    return sumx / x.length
+}
+
 function sgd_update() {
+    // Save the error to an array for learning curves
+    save_current_error()
+
     // Get the gradient
     let grad = gradient() ;
 
     // Calculate new value for w
-    // console.log(-learning_rate * grad);
+    w_hat_old = w_hat;
     w_hat = w_hat - learning_rate * grad;
 
     // Keep the selection within bounds on the plot
@@ -217,7 +258,6 @@ function sgd_update() {
 
     // Reduce the learning rate over time
     learning_rate = 0.9999*learning_rate;
-    // console.log(learning_rate);
 }
 
 function get_batch_error() {
@@ -227,45 +267,23 @@ function get_batch_error() {
 
 function get_batch_data() {
     data = [];
-    sample_indices.forEach(function(i) {
+    batch_indices.forEach(function(i) {
         data.push(state.data[i])
     })
     return data;
 }
-
-// function adam_update() {
-//     // Get the gradient
-//     let g = gradient() ;
-//     let mt = b1 * m + (1-b1)*g;
-//     let vt = b2 * v + (1-b2)*g**2;
-//     t = t + 1 ;
-//     mt = mt/(1-b1**t) ;
-//     vt = vt/(1-b2**t) ;
-//     w_hat = w_hat - learning_rate*mt/(Math.sqrt(vt) + 10**(-8));
-
-//     // Keep the selection within bounds on the plot
-//     if (w_hat < WMIN) {
-//         w_hat = WMIN ;
-//     } else if (w_hat > WMAX) {
-//         w_hat = WMAX ;
-//     }
-
-//     console.log(w_hat);
-
-//     // Update parameters for next iteration
-//     m = mt;
-//     v = vt;
-// }
 
 // Define variables that will not be changed interactively
 let XMAX = Math.PI,
     YMIN = -1.5, 
     YMAX = 1.5,
     WMIN = 0,
-    WMAX = 15,
+    WMAX = 30,
     EMIN = 0,
     EMAX = 2.5,
-    NMAX = 500,
+    NMAX = 300,
+    EPOCH_MIN = 0,
+    EPOCH_MAX = 400,
     nTarget = 601,
     nWeights = 601,
     true_weight = 5,
@@ -276,6 +294,7 @@ let XMAX = Math.PI,
 // Define parameters that may change interactively
 let nData = 100,
     w_hat = 10,
+    w_hat_old = 10,
     selected_weight_index = [],
     noise_std = 0.25,
     hypothesis_locked = false,
@@ -286,11 +305,15 @@ let nData = 100,
     sgd_timer_interval = [],
     interval_set = false,
     epoch = 0,
-    target_visible = true
-    sample_indices = [],
     full_gradient = 0
-    batch_error = [];
-
+    batch_indices = [],
+    batch_error = [],
+    show_target_function = true,
+    show_batch_error = true,
+    show_gradient_line = true,
+    show_learning_curve = true,
+    error_by_epoch = [],
+    error_within_epoch = [];
 
 // Parameters for plots
 var w = 400,
@@ -298,23 +321,9 @@ var w = 400,
     margin = { top: 40, right: 20, bottom: 30, left: 40 };
 let radius = 5;
 
-// // Define adam parameters
-// let m = 0,
-//     v = 0,
-//     t = 0,
-//     b1 = 0.99,
-//     b2 = 0.99999;
-
-// function adam_reset() {
-//     m = 0;
-//     v = 0;
-//     t = 0;
-// }
-
 // Create a new set of all values for the data
 function new_scenario() {
     let target = gen_function_data(f,nTarget,XMAX),
-        // data = gen_corrupted_data(f,nData,XMAX,noise_std),
         noisefree_data = gen_function_data_random_x(f,nData,XMAX),
         noise = gen_noise(nData),
         data = corrupt_data(noisefree_data, noise);
@@ -339,6 +348,9 @@ function new_scenario() {
 function reset_sgd() {
     learning_rate = document.getElementById("slideLearningRate").value / 100 * LR_MAX;
     epoch = 0;
+    error_by_epoch = [];
+    error_within_epoch = [];
+    update_learning_curve();
     document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
     document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
     document.getElementById('epoch').innerHTML = "Epoch = " + epoch ;
@@ -469,14 +481,19 @@ function update_training_circles() {
         .attr("fill", function(d,i){ 
             return error_color_scale(state.pointwise_error[i]); 
         })
+        .attr('class', function(d,i) {
+            if (batch_indices.includes(i)) {
+                return "batch-sample";
+            } else {
+                return "";
+            }
+        })
         .call(d3.drag()
                   .on("start", dragstarted)
                   .on("drag", dragged)
                   .on("end", dragended)
                   )
         .raise();
-        // .on("mouseover", handleMouseOver)
-        // .on("mouseout", handleMouseOut)
 }
 
 /*
@@ -525,18 +542,6 @@ function dragged(d,i) {
 
 function dragended(d) {
     d3.select(this).attr("class", 'dragged')
-        .attr("r", radius);
-}
-
-
-function handleMouseOver(d, i) {  // Add interactivity
-    d3.select(this)
-        .attr("r", radius * 1.5)
-
-}
-
-function handleMouseOut(d, i) {
-    d3.select(this)
         .attr("r", radius);
 }
 
@@ -622,15 +627,38 @@ function update_error_line() {
 function update_batch_error_line() {
     svg_ep.selectAll("path.batch-error-line").remove()
 
-    svg_ep.append("path")
-        .attr("class", "batch-error-line")
-        .attr("d", valueline_ep(batch_error));
+    if (show_batch_error) {
+        svg_ep.append("path")
+            .attr("class", "batch-error-line")
+            .attr("d", valueline_ep(batch_error));
+    }
 }
 
 // Create a single circle for highlighting selected point
+old_point = svg_ep.append("circle")
+    .attr("id","old-error_point");
+
 svg_ep.append("circle")
     .attr("id","error_point")
     .on("click", error_plot_clicked);
+
+svg_ep.append("path")
+        .attr("class", "gradient")
+        .attr("d", valueline_ep([
+            {x:w_hat_old, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))},
+            {x:w_hat, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))}]));
+
+function update_gradient_line() {
+    svg_ep.selectAll("path.gradient").remove()
+
+    if (show_gradient_line) {
+        svg_ep.append("path")
+            .attr("class", "gradient")
+            .attr("d", valueline_ep([
+                {x:w_hat_old, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))},
+                {x:w_hat, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))}]));
+    }
+}
 
 /*
 --------------------------------------------
@@ -701,20 +729,26 @@ function get_nearest_x(x) {
 
 function update_for_sgd() {
     sgd_update()
-    // adam_update();
     recalculate_hypothesis();
     update_hypothesis_line();
     recalculate_pointwise_error();
-    update_training_circles();
+    
     selected_weight_index = get_nearest_x(w_hat);
     select_weight(selected_weight_index);
-    // console.log('w = ' + w_hat);
     document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
     document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
     document.getElementById('epoch').innerHTML = "Epoch = " + epoch ;
 
-    get_batch_error();
+    
+    if (show_batch_error) {
+        get_batch_error();    
+    }
+    
     update_batch_error_line();
+    
+    update_training_circles();
+
+    update_gradient_line();
 }
 
 
@@ -741,12 +775,95 @@ function toggle_sgd_mode() {
 }
 
 function toggle_target() {
-    if (target_visible) {
+    if (show_target_function) {
         d3.select('#target').attr('visibility','hidden')
     } else {
         d3.select('#target').attr('visibility','visible')
     }
-    target_visible = !target_visible;
+    show_target_function = !show_target_function;
+}
+
+function toggle_batch_error() {
+    if (!show_batch_error) {
+        get_batch_error()
+    } 
+    show_batch_error = !show_batch_error;
+    update_batch_error_line();
+}
+
+function toggle_gradient() {
+    show_gradient_line = !show_gradient_line;
+    update_gradient_line();
+}
+
+
+/*
+--------------------------------------------
+LEARNING CURVE PLOT
+--------------------------------------------
+*/
+let h_lc = h/2;
+// We're passing in a function in d3.max to tell it what we're maxing (x value)
+var xScale_lc = d3.scaleLinear()
+    .domain([EPOCH_MIN,EPOCH_MAX])
+    .range([margin.left, w - margin.right]);  // Set margins for x specific
+
+// We're passing in a function in d3.max to tell it what we're maxing (y value)
+var yScale_lc = d3.scaleLinear()
+    .domain([EMIN, EMAX])
+    .range([h_lc - margin.bottom, margin.top]);  // Set margins for y specific
+
+// Add a X and Y Axis (Note: orient means the direction that ticks go, not position)
+var xAxis_lc = d3.axisBottom(xScale_lc);
+var yAxis_lc = d3.axisLeft(yScale_lc);
+
+// Define the line
+var valueline_lc = d3.line()
+    .x(function(d) { return xScale_lc(d.x); })
+    .y(function(d) { return yScale_lc(d.y); });
+
+var svg_lc = d3.select("#plot_learning_curve")
+    .append("svg")
+    .attr("width", w)
+    .attr("height", h_lc);
+
+// Adds X-Axis as a 'g' element
+svg_lc.append("g").attr("class", "axis")
+  .attr("transform", "translate(" + [0, h_lc - margin.bottom] + ")")  // Translate just moves it down into position (or will be on top)
+  .call(d3.axisBottom(xScale_lc));  // Call the xAxis function on the group
+
+// Adds Y-Axis as a 'g' element
+svg_lc.append("g").attr("class", "axis")
+  .attr("transform", "translate(" + [margin.left, 0] + ")")
+  .call(yAxis_lc);  // Call the yAxis function on the group
+
+// Add axis labels
+svg_lc.append("text")
+    .attr("class", "x label")
+    .attr("text-anchor", "end")
+    .attr("alignment-baseline", "bottom")
+    .attr("x", w)
+    .attr("y", h_lc-5)
+    .text("epoch");
+
+svg_lc.append("text")
+    .attr("class", "y label")
+    .attr("text-anchor", "end")
+    .attr("y", 6)
+    .attr("dy", ".75em")
+    .attr("x", -margin.top)
+    .attr("transform", "rotate(-90)")
+    .text("Mean E(w) in Epoch");
+
+
+function update_learning_curve() {
+    svg_lc.selectAll("path.learning-curve").remove()
+
+    if (show_learning_curve) {
+        svg_lc.append("path")
+            .attr("class", "learning-curve")
+            .attr("d", valueline_lc(error_by_epoch));
+    }
 }
 
 /*

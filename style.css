@@ -131,8 +131,21 @@ text.key-text{
   stroke-dasharray: 5,5; 
 }
 
+/* True weight value */
 .batch-error-line {
-  stroke: grey;
+  stroke: gray;
   stroke-opacity: 0.5;
   stroke-width: 1;
+}
+
+/* Circles that are included in the batch */
+.batch-sample {
+  stroke: gray;
+  stroke-opacity: 1;
+  stroke-width: 4;
+}
+
+.label {
+  text-anchor: end;
+  font-weight: bold;
 }

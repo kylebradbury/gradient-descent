@@ -26,18 +26,20 @@
 
         </div>
       <div class="row">
-        <div class="col-md-2">
+        <div class="col-md-3">
             <button onclick="refresh(); reset_sgd()">Draw new data</button><br>
             <button onclick="update_for_sgd()">Single SGD Update</button><br>
             <button onclick="autoupdate_for_sgd()">Toggle Auto SGD</button><br>
+            <button id="reset" onclick="reset_sgd()">Reset Gradient Descent</button><br>
             <button id="sgd_mode_toggle" onclick="toggle_sgd_mode()">Toggle Mode: minibatch</button><br>
-            <button id="reset" onclick="reset_sgd()">Reset learning rate</button><br>
-            <button id="reset" onclick="toggle_target()">Toggle Target Function</button>
+            <button id="toggle_target" onclick="toggle_target()">Toggle Target Function</button><br>
+            <button id="toggle_batch_error" onclick="toggle_batch_error()">Toggle Batch Error</button><br>
+            <button id="toggle_gradient" onclick="toggle_gradient()">Toggle Gradient</button><br>
             <p><span id='learningrate'></span><br>
             <span id='weight'></span><br>
             <span id='epoch'></span></p>
         </div>
-          <div class="col-md-10">
+          <div class="col-md-3">
             <form>
               <div class="slidecontainer">
                 <label for="slideNumSamples" id="slideNumSamplesLabel"></label>
@@ -65,6 +67,10 @@
                 <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideBatchSize">
               </div>
             </form>
+          </div>
+
+          <div class="col-md-6">
+            <div id="plot_learning_curve"></div>
           </div>
       </div>
     </div>
