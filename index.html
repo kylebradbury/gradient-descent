@@ -27,10 +27,10 @@
         </div>
       <div class="row">
         <div class="col-md-3">
-            <button onclick="refresh(); reset_sgd()">Draw new data</button><br>
+            <button onclick="Engine.refresh(); Engine.reset_sgd()">Draw new data</button><br>
             <button onclick="update_for_sgd()">Single SGD Update</button><br>
             <button onclick="autoupdate_for_sgd()">Toggle Auto SGD</button><br>
-            <button id="reset" onclick="reset_sgd()">Reset Gradient Descent</button><br>
+            <button id="reset" onclick="Engine.reset_sgd()">Reset Gradient Descent</button><br>
             <button id="sgd_mode_toggle" onclick="toggle_sgd_mode()">Toggle Mode: minibatch</button><br>
             <button id="toggle_target" onclick="toggle_target()">Toggle Target Function</button><br>
             <button id="toggle_batch_error" onclick="toggle_batch_error()">Toggle Batch Error</button><br>

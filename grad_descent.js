@@ -4,295 +4,32 @@ Author: Kyle Bradbury
 Idea adapted from: http://bl.ocks.org/WilliamQLiu/76ae20060e19bf42d774
 */
 
-// TODO LIST FOR PROJECT:
-// [X] Button to generate new data
-// [X] Slider to adjust number of data points
-// [X] Can hover over a point along the Error plot and display the hypothesis function
-// [X] Can click on the error plot to lock in point
-// [X] Can move the training data points
-// [X] Update dot when sliders or button pressed
-// [X] Create slider to adjust noise level
-// [X] Color the points according to model to judge fit
-// [X] Calculate gradient
-// [X] Move in the direction of gradient (batch)
-// [X] Take step with SGD
-// [X] Checkbox to show/hide target model
-// [X] Plot the learning curves by epoch
-// [X] Assign the average value of error through the epoch to each epoch
-// [X] Set max number of datapoints to 300
-// [X] When performing SGD, show the points that are selected as part of the batch
-//     and the corresponding error function just for that subset
-// [X] Button to turn on plot for the hypothesis function
-// [X] Add target line at true parameter value
-// [X] Highlight which specific points were used in the SGD update
-// [X] Toggle for SGD batch error function plotting
-
-// [ ] Change the target function
-// [ ] Change the target function
-// [ ] Add legend
-// [ ] Checkbox to color the dots (or not)
-// [ ] Make learning rate decay a function of epoch
-// [ ] Show the last point for the SGD update to be able to see the progress more easily
-// [ ] Add convergence criterion based on last 10 batches (if the change in x < delta for 10 consecutive batches)
-// [ ] Update minibatch error when a value is moved
-// [ ] Fix toggle for target function (function automatically reappears when new data is drawn)
-
-// May be unnecessary:
-// [ ] Checkbox to show/hide target error point
-// [ ] Slider to adjust target weight
-// [ ] Can delete the training data points
 
 /*
 --------------------------------------------
-CODE FOR COMPUTATION
+INITIALIZATIONS
 --------------------------------------------
 */
-function linspace(startValue, stopValue, cardinality) {
-  var arr = [];
-  var step = (stopValue - startValue) / (cardinality - 1);
-  for (var i = 0; i < cardinality; i++) {
-    arr.push(startValue + (step * i));
-  }
-  return arr;
-}
-
-function mse(weights,data) {
-    let N = data.length;
-    let err = weights.map(function(w){
-        return sum_squared_error(data,f_generator(w)) / N ;
-    })
-    return make_d3_ready({x:weights, y:err}) ;
-}
-
-function get_current_error(weight,data) {
-    let N = data.length;
-    return sum_squared_error(data,f_generator(weight)) / N ;
-}
-
-function save_current_error() {
-    err = get_current_error(w_hat_old,state.data);
-    error_within_epoch.push(err);
-}
-
-function sum_squared_error(data,f) {
-    return data.reduce(function(tot,d){
-        return tot + Math.pow(f(d.x) - d.y,2) ;
-    }, 0)
-}
-
-function square_error(data,f) {
-    return data.map(function(d){
-        return Math.pow(f(d.x) - d.y,2) ;
-    })
-}
-
-function f_generator(w) {
-    return function(x) {
-        return Math.sin(w*x) ; 
-    }
-}
-
-function f_grad(d,w) {
-    return (Math.sin(w*d.x) - d.y)*Math.cos(w*d.x)*d.x;
-    // return (w*d.x-1.5)*d.x
-}
-
-function rand() {
-    return Math.random();
-}
-
-function randn() {
-    var u = 0, v = 0;
-    while(u === 0) u = Math.random(); //Converting [0,1) to (0,1)
-    while(v === 0) v = Math.random();
-    return Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
-}
-
-function rand_array(maxval,N) {
-    let rand_vals = [];
-    for (let i=0; i < N; i++) {
-        rand_vals.push(rand()*maxval);
-    }
-    return rand_vals;
-}
-
-// Create a representation of the true function at equally spaced x values
-function gen_function_data(f,n,xmax) {
-    let x = linspace(0,xmax,n) ;
-    let y = x.map(v => f(v)) ;
-    return make_d3_ready({x:x, y:y}) ;
-}
-
-// Create the noise-free data but with random values for x
-function gen_function_data_random_x(f,N,xmax) {
-    let x = rand_array(xmax,N) ;
-    x.sort();
-    // let x = linspace(0,xmax,N) ;
-    let y = x.map(v => f(v)) ;
-    
-    return make_d3_ready({x:x, y:y}) ;
-}
-
-// Generate an array of normally distributed noise
-function gen_noise(N) {
-    let noise = [];
-    for (let i = 0; i < N; i++) {
-        noise.push(randn());
-    }
-    return noise ;
-}
-
-// Add noise to "clean" data
-function corrupt_data(raw_function,noise) {
-    let output = [];
-    N = raw_function.length;
-    for (let i = 0; i < N; i++) {
-        output.push({x:raw_function[i].x, y:raw_function[i].y + noise_std*noise[i]}) ;
-    }
-    return output 
-}
-
-// Convert the arrays into arrays of objects with (x,y) pairs: [{x:x1, y:y1},...]
-function make_d3_ready(data) {
-    let d3data = []; 
-    for (let i = 0; i < data.x.length; i++) {
-        d3data.push({x:data.x[i], y:data.y[i]}) ;
-    }
-    return d3data;
-}
-
-// Calculate the gradient of the loss function based on the training data and f_generator
-// Assumes the case where f(w,x) = sin(w*x)
-// Here data is an array of (x,y) pair objects
-function gradient() {
-    let w = w_hat,
-        grad = 0,
-        cgrad = [],
-        d = [];
-    
-    batch_indices = get_next_batch();
-    let N = batch_indices.length;
-
-    batch_indices.forEach(function(i){
-        d = state.data[i];
-        grad = grad + f_grad(d,w);
-    })
-    full_gradient = (2 / N) * grad;
-    return full_gradient;
-}
-
-function get_next_batch() {
-    let N = state.data.length ;
-    if (sgd_mode == 'batch') {
-        // Return a list of all the indices
-        return get_range(N);
-    } else if (sgd_mode == 'minibatch') {
-        // Check if the pool is empty: if so, refill it
-        return draw_indices(batchsize) ;
-    }
-}
-
-// Get values from 0 to N-1 by intervals of 1
-function get_range(N) {
-    let list = [];
-    for (let i = 0; i < N; i++) {
-        list.push(i);
-    }
-    return list;
-}
-
-// Pick a new set of training data indices for the next batch
-function draw_indices(N) {
-    let batch = [];
-    for (let i = 0; i < N; i++) {
-        // If there are no more indices, refill them
-        let nAvailableIndices = indices_sgd.length;
-        if (nAvailableIndices == 0) {
-            indices_sgd = get_range(state.data.length);
-            nAvailableIndices = indices_sgd.length;
-            new_epoch() ;
-        }
-        // Draw one value and remove it from the index
-        let randomIndex = Math.floor(Math.random()*nAvailableIndices); 
-        cindex = indices_sgd.splice(randomIndex,1)[0];
-        batch.push(cindex);
-    }
-    return batch;
-}
-
-function new_epoch() {
-    epoch++;
-    // console.log(error_within_epoch)
-    if (epoch <= EPOCH_MAX) {
-        let epoch_mean_error = mean(error_within_epoch) ;
-        error_by_epoch.push({x:epoch-1,y:epoch_mean_error});
-        error_within_epoch = [];
-        update_learning_curve();
-    }
-}
-
-function mean(x) {
-    sumx = x.reduce(function(acc,val){
-        return acc + val;
-    },0)
-    return sumx / x.length
-}
-
-function sgd_update() {
-    // Save the error to an array for learning curves
-    save_current_error()
-
-    // Get the gradient
-    let grad = gradient() ;
-
-    // Calculate new value for w
-    w_hat_old = w_hat;
-    w_hat = w_hat - learning_rate * grad;
-
-    // Keep the selection within bounds on the plot
-    if (w_hat < WMIN) {
-        w_hat = WMIN ;
-    } else if (w_hat > WMAX) {
-        w_hat = WMAX ;
-    }
-
-    // Reduce the learning rate over time
-    learning_rate = 0.9999*learning_rate;
-}
-
-function get_batch_error() {
-    data = get_batch_data();
-    batch_error = mse(state.weights,data);
-}
-
-function get_batch_data() {
-    data = [];
-    batch_indices.forEach(function(i) {
-        data.push(state.data[i])
-    })
-    return data;
-}
-
 // Define variables that will not be changed interactively
-let XMAX = Math.PI,
-    YMIN = -1.5, 
-    YMAX = 1.5,
-    WMIN = 0,
-    WMAX = 30,
-    EMIN = 0,
-    EMAX = 2.5,
-    NMAX = 300,
-    EPOCH_MIN = 0,
+let EPOCH_MIN = 0,
     EPOCH_MAX = 400,
-    nTarget = 601,
-    nWeights = 601,
-    true_weight = 5,
+    NTARGET = 601,
+    NWEIGHT = 601,
     NOISE_MAX = 0.5,
-    LR_MAX = 1,
-    f = f_generator(true_weight);
+    LR_MAX = 1;
 
 // Define parameters that may change interactively
-let nData = 100,
+let XMAX = Math.PI,
+	XMIN = 0,
+    YMIN = -1.5, 
+    YMAX = 1.5,
+    WMIN = -2,
+    WMAX = 2,
+    EMIN = 0,
+    EMAX = 2.5*10,
+    NMAX = 300,
+	true_weight = 0,
+	nData = 100,
     w_hat = 10,
     w_hat_old = 10,
     selected_weight_index = [],
@@ -302,10 +39,11 @@ let nData = 100,
     sgd_mode = 'minibatch',
     batchsize = 4,
     learning_rate = 0.5,
+    learning_rate_decay = 0.9999,
     sgd_timer_interval = [],
     interval_set = false,
     epoch = 0,
-    full_gradient = 0
+    full_gradient = 0,
     batch_indices = [],
     batch_error = [],
     show_target_function = true,
@@ -321,68 +59,333 @@ var w = 400,
     margin = { top: 40, right: 20, bottom: 30, left: 40 };
 let radius = 5;
 
-// Create a new set of all values for the data
-function new_scenario() {
-    let target = gen_function_data(f,nTarget,XMAX),
-        noisefree_data = gen_function_data_random_x(f,nData,XMAX),
-        noise = gen_noise(nData),
-        data = corrupt_data(noisefree_data, noise);
-        weights = linspace(WMIN,WMAX,nWeights),
-        error_data = mse(weights,data),
-        pointwise_error = square_error(data, f_generator(w_hat))
-        hypothesis = [] ;
-        if (w_hat !== '') {
-            hypothesis = gen_function_data(f_generator(w_hat),nTarget,XMAX)  
-        }
-        
-    return {target:target, 
-            noisefree_data:noisefree_data,
-            noise:noise,
-            data:data, 
-            weights:weights, 
-            error_data:error_data,
-            pointwise_error:pointwise_error,
-            hypothesis:hypothesis};
+/*
+--------------------------------------------
+OPTIONS FOR FUNCTIONS
+--------------------------------------------
+*/
+
+function f_generator(w) {
+    a = -1.007;
+    b = 1.4167;
+    return function(x) {
+        return a + (x - b - w)**2 ; 
+    }
 }
 
-function reset_sgd() {
-    learning_rate = document.getElementById("slideLearningRate").value / 100 * LR_MAX;
-    epoch = 0;
-    error_by_epoch = [];
-    error_within_epoch = [];
-    update_learning_curve();
-    document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
-    document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
-    document.getElementById('epoch').innerHTML = "Epoch = " + epoch ;
-    
+function f_grad(d,w) {
+    return 4*(d.y - a - (d.x - b - w)**2)*(d.x - b - w);
 }
 
-function recalculate_error() {
-    recalculate_pointwise_error();
-    state.error_data = mse(state.weights,state.data);
-}
+/*
+--------------------------------------------
+CODE FOR COMPUTATION
+--------------------------------------------
+*/
 
-function recalculate_noise() {
-    state.data = corrupt_data(state.noisefree_data, state.noise);
-    state.error_data = mse(state.weights,state.data)
-}
+let Engine = function(){
 
-function recalculate_hypothesis() {
-    state.hypothesis = gen_function_data(f_generator(w_hat),nTarget,XMAX)  
-}
+	function linspace(startValue, stopValue, cardinality) {
+	  var arr = [];
+	  var step = (stopValue - startValue) / (cardinality - 1);
+	  for (var i = 0; i < cardinality; i++) {
+	    arr.push(startValue + (step * i));
+	  }
+	  return arr;
+	}
 
-function recalculate_pointwise_error() {
-    state.pointwise_error = square_error(state.data, f_generator(w_hat))
-}
+	function mse(weights,data) {
+	    let N = data.length;
+	    let err = weights.map(function(w){
+	        return sum_squared_error(data,f_generator(w)) / N ;
+	    })
+	    return make_d3_ready({x:weights, y:err}) ;
+	}
 
-// Draw new data and recalculate component values
-function refresh() {
-    state = new_scenario();
-    update_error_line();
-    update_target_line();
-    update_hypothesis_line();
-    update_training_circles();  
-}
+	function sum_squared_error(data,f) {
+	    return data.reduce(function(tot,d){
+	        return tot + Math.pow(f(d.x) - d.y,2) ;
+	    }, 0)
+	}
+
+	function save_current_error() {
+		function get_current_error(weight,data) {
+	    	let N = data.length;
+	    	return sum_squared_error(data,f_generator(weight)) / N ;
+		}
+
+	    err = get_current_error(w_hat_old,state.data);
+	    error_within_epoch.push(err);
+	}
+
+	function square_error(data,f) {
+	    return data.map(function(d){
+	        return Math.pow(f(d.x) - d.y,2) ;
+	    })
+	}
+
+	function rand() {
+	    return Math.random();
+	}
+
+	function randn() {
+	    var u = 0, v = 0;
+	    while(u === 0) u = Math.random(); //Converting [0,1) to (0,1)
+	    while(v === 0) v = Math.random();
+	    return Math.sqrt( -2.0 * Math.log( u ) ) * Math.cos( 2.0 * Math.PI * v );
+	}
+
+	function rand_array(range,N,minval) {
+	    let rand_vals = [];
+	    for (let i=0; i < N; i++) {
+	        rand_vals.push(rand()*range+minval);
+	    }
+	    return rand_vals;
+	}
+
+	// Create a representation of the true function at equally spaced x values
+	function gen_function_data(f,n,xmin,xmax) {
+	    let x = linspace(xmin,xmax,n) ;
+	    let y = x.map(v => f(v)) ;
+	    return make_d3_ready({x:x, y:y}) ;
+	}
+
+	// Create the noise-free data but with random values for x
+	function gen_function_data_random_x(f,N,xmax,xmin) {
+	    let x = rand_array(xmax-xmin,N,xmin) ;
+	    x.sort();
+	    let y = x.map(v => f(v)) ;
+	    
+	    return make_d3_ready({x:x, y:y}) ;
+	}
+
+	// Generate an array of normally distributed noise
+	function gen_noise(N) {
+	    let noise = [];
+	    for (let i = 0; i < N; i++) {
+	        noise.push(randn());
+	    }
+	    return noise ;
+	}
+
+	// Add noise to "clean" data
+	function corrupt_data(raw_function,noise) {
+	    let output = [];
+	    N = raw_function.length;
+	    for (let i = 0; i < N; i++) {
+	        output.push({x:raw_function[i].x, y:raw_function[i].y + noise_std*noise[i]}) ;
+	    }
+	    return output 
+	}
+
+	// Convert the arrays into arrays of objects with (x,y) pairs: [{x:x1, y:y1},...]
+	function make_d3_ready(data) {
+	    let d3data = []; 
+	    for (let i = 0; i < data.x.length; i++) {
+	        d3data.push({x:data.x[i], y:data.y[i]}) ;
+	    }
+	    return d3data;
+	}
+
+	// Calculate the gradient of the loss function based on the training data and f_generator
+	// Assumes the case where f(w,x) = sin(w*x)
+	// Here data is an array of (x,y) pair objects
+	function gradient() {
+	    let w = w_hat,
+	        grad = 0,
+	        cgrad = [],
+	        d = [];
+	    
+	    batch_indices = get_next_batch();
+	    let N = batch_indices.length;
+
+	    batch_indices.forEach(function(i){
+	        d = state.data[i];
+	        grad = grad + f_grad(d,w);
+	    })
+	    full_gradient = (2 / N) * grad;
+	    return full_gradient;
+	}
+
+	function get_next_batch() {
+	    let N = state.data.length ;
+	    if (sgd_mode == 'batch') {
+	        // Return a list of all the indices
+	        return get_range(N);
+	    } else if (sgd_mode == 'minibatch') {
+	        // Check if the pool is empty: if so, refill it
+	        return draw_indices(batchsize) ;
+	    }
+	}
+
+	// Get values from 0 to N-1 by intervals of 1
+	function get_range(N) {
+	    let list = [];
+	    for (let i = 0; i < N; i++) {
+	        list.push(i);
+	    }
+	    return list;
+	}
+
+	// Pick a new set of training data indices for the next batch
+	function draw_indices(N) {
+	    let batch = [];
+	    for (let i = 0; i < N; i++) {
+	        // If there are no more indices, refill them
+	        let nAvailableIndices = indices_sgd.length;
+	        if (nAvailableIndices == 0) {
+	            indices_sgd = get_range(state.data.length);
+	            nAvailableIndices = indices_sgd.length;
+	            new_epoch() ;
+	        }
+	        // Draw one value and remove it from the index
+	        let randomIndex = Math.floor(Math.random()*nAvailableIndices); 
+	        cindex = indices_sgd.splice(randomIndex,1)[0];
+	        batch.push(cindex);
+	    }
+	    return batch;
+	}
+
+	function new_epoch() {
+	    epoch++;
+	    if (epoch <= EPOCH_MAX) {
+	        let epoch_mean_error = mean(error_within_epoch) ;
+	        error_by_epoch.push({x:epoch-1,y:epoch_mean_error});
+	        error_within_epoch = [];
+	        update_learning_curve();
+	    }
+	}
+
+	function mean(x) {
+	    sumx = x.reduce(function(acc,val){
+	        return acc + val;
+	    },0)
+	    return sumx / x.length
+	}
+
+	function sgd_update() {
+	    // Save the error to an array for learning curves
+	    save_current_error()
+
+	    // Get the gradient
+	    let grad = gradient() ;
+
+	    // Calculate new value for w
+	    w_hat_old = w_hat;
+	    w_hat = w_hat - learning_rate * grad;
+
+	    // Keep the selection within bounds on the plot
+	    if (w_hat < WMIN) {
+	        w_hat = WMIN ;
+	    } else if (w_hat > WMAX) {
+	        w_hat = WMAX ;
+	    }
+
+	    // Reduce the learning rate over time
+	    learning_rate = learning_rate_decay*learning_rate;
+	}
+
+	function get_batch_error() {
+	    data = get_batch_data();
+	    batch_error = mse(state.weights,data);
+	}
+
+	function get_batch_data() {
+	    data = [];
+	    batch_indices.forEach(function(i) {
+	        data.push(state.data[i])
+	    })
+	    return data;
+	}
+
+	// Create a new set of all values for the data
+	function new_scenario() {
+	    let target_function = f_generator(true_weight),
+	        predicted_function = f_generator(w_hat);
+
+	    let target = gen_function_data(target_function,NTARGET,XMIN,XMAX),
+	        noisefree_data = gen_function_data_random_x(target_function,nData,XMAX,XMIN),
+	        noise = gen_noise(nData),
+	        data = corrupt_data(noisefree_data, noise);
+	        weights = linspace(WMIN,WMAX,NWEIGHT),
+	        error_data = mse(weights,data),
+	        pointwise_error = square_error(data, predicted_function)
+	        hypothesis = [] ;
+	        if (w_hat !== '') {
+	            hypothesis = gen_function_data(predicted_function,NTARGET,XMIN,XMAX)  
+	        }
+	        
+	    return {target:target, 
+	            noisefree_data:noisefree_data,
+	            noise:noise,
+	            data:data, 
+	            weights:weights, 
+	            error_data:error_data,
+	            pointwise_error:pointwise_error,
+	            hypothesis:hypothesis};
+	}
+
+	function reset_sgd() {
+	    learning_rate = document.getElementById("slideLearningRate").value / 100 * LR_MAX;
+	    epoch = 0;
+	    error_by_epoch = [];
+	    error_within_epoch = [];
+	    update_learning_curve();
+	    document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
+	    document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
+	    document.getElementById('epoch').innerHTML = "Epoch = " + epoch ;
+	}
+
+	function recalculate_error() {
+	    recalculate_pointwise_error();
+	    state.error_data = mse(state.weights,state.data);
+	}
+
+	function recalculate_noise() {
+	    state.data = corrupt_data(state.noisefree_data, state.noise);
+	    state.error_data = mse(state.weights,state.data)
+	}
+
+	function recalculate_hypothesis() {
+	    state.hypothesis = gen_function_data(f_generator(w_hat),NTARGET,XMIN,XMAX)  
+	}
+
+	function recalculate_pointwise_error() {
+	    state.pointwise_error = square_error(state.data, f_generator(w_hat))
+	}
+
+	// Draw new data and recalculate component values
+	function refresh() {
+	    state = new_scenario();
+	    update_error_line();
+	    update_target_line();
+	    update_hypothesis_line();
+	    update_training_circles();  
+	}
+
+	// Make some of these functions available outside the namespace
+	return {
+		sgd_update:sgd_update,
+		get_batch_error:get_batch_error,
+		new_scenario:new_scenario,
+		reset_sgd:reset_sgd,
+		recalculate_error:recalculate_error,
+		recalculate_noise:recalculate_noise,
+		recalculate_hypothesis:recalculate_hypothesis,
+		recalculate_pointwise_error:recalculate_pointwise_error,
+		refresh:refresh
+	}
+
+}(); // End Engine (code for computation)
+
+
+
+
+
+
+
+
+
 
 /*
 --------------------------------------------
@@ -392,7 +395,7 @@ PLOT DATA, TARGET, AND ESTIMATE
 
 // We're passing in a function in d3.max to tell it what we're maxing (x value)
 var xScale = d3.scaleLinear()
-    .domain([0, XMAX])
+    .domain([XMIN, XMAX])
     .range([margin.left, w - margin.right]);  // Set margins for x specific
 
 // We're passing in a function in d3.max to tell it what we're maxing (y value)
@@ -446,7 +449,6 @@ svg.append("text")
     .attr("x", -margin.top)
     .attr("transform", "rotate(-90)")
     .text("f(x,w)");
-
 
 function update_target_line() {
     svg.selectAll("path.targetline").remove()
@@ -521,13 +523,13 @@ function dragged(d,i) {
     d.y = yScale.invert(coords[1]);
 
     // Check to make sure points don't move off the plot
-    if (d.x < 0) {d.x = 0;}
+    if (d.x < XMIN) {d.x = XMIN;}
     if (d.x > XMAX) {d.x = XMAX;}
     if (d.y < YMIN) {d.y = YMIN;}
     if (d.y > YMAX) {d.y = YMAX;}
 
     // Redraw the error functions based on the new data
-    recalculate_error();
+    Engine.recalculate_error();
     update_error_line();
 
     d3.select(this)
@@ -685,9 +687,9 @@ function mousemoved() {
     // remove_existing_highlight();
     select_weight(selected_weight_index);
 
-    recalculate_hypothesis();
+    Engine.recalculate_hypothesis();
     update_hypothesis_line();
-    recalculate_pointwise_error();
+    Engine.recalculate_pointwise_error();
     update_training_circles();
 }
 
@@ -728,10 +730,10 @@ function get_nearest_x(x) {
 }
 
 function update_for_sgd() {
-    sgd_update()
-    recalculate_hypothesis();
+    Engine.sgd_update()
+    Engine.recalculate_hypothesis();
     update_hypothesis_line();
-    recalculate_pointwise_error();
+    Engine.recalculate_pointwise_error();
     
     selected_weight_index = get_nearest_x(w_hat);
     select_weight(selected_weight_index);
@@ -741,7 +743,7 @@ function update_for_sgd() {
 
     
     if (show_batch_error) {
-        get_batch_error();    
+        Engine.get_batch_error();    
     }
     
     update_batch_error_line();
@@ -785,7 +787,7 @@ function toggle_target() {
 
 function toggle_batch_error() {
     if (!show_batch_error) {
-        get_batch_error()
+        Engine.get_batch_error()
     } 
     show_batch_error = !show_batch_error;
     update_batch_error_line();
@@ -883,7 +885,7 @@ sliderNumSamples.oninput = function() {
     nData = Math.round(this.value /100 * NMAX);
     numsamples_slider.innerHTML = "Number of training datapoints = " + nData;
     indices_sgd = []
-    refresh();
+    Engine.refresh();
 }
 
 /*
@@ -952,7 +954,7 @@ sliderBatchSize.oninput = function() {
 INITIATE THE PLOTS
 --------------------------------------------
 */
-var state = new_scenario();
+var state = Engine.new_scenario();
 
 update_target_line();
 update_hypothesis_line();
