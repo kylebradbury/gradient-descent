@@ -27,17 +27,24 @@
         </div>
       <div class="row">
         <div class="col-md-3">
-            <button onclick="Engine.refresh(); Engine.reset_sgd()">Draw new data</button><br>
-            <button onclick="update_for_sgd()">Single SGD Update</button><br>
-            <button onclick="autoupdate_for_sgd()">Toggle Auto SGD</button><br>
-            <button id="reset" onclick="Engine.reset_sgd()">Reset Gradient Descent</button><br>
-            <button id="sgd_mode_toggle" onclick="toggle_sgd_mode()">Toggle Mode: minibatch</button><br>
-            <button id="toggle_target" onclick="toggle_target()">Toggle Target Function</button><br>
-            <button id="toggle_batch_error" onclick="toggle_batch_error()">Toggle Batch Error</button><br>
-            <button id="toggle_gradient" onclick="toggle_gradient()">Toggle Gradient</button><br>
+            <label for="funcs">Choose a target function:</label>
+            <select id="funcs">
+              <option value="sin">Sine</option>
+              <option value="parabola">Parabola</option>
+            </select><br>
+            <button class="btn btn-primary btn-sm" onclick="refresh(); reset_sgd()">New Data</button>
+            <button class="btn btn-primary btn-sm"id="sgd_mode_toggle" onclick="toggle_sgd_mode()">Minibatch</button><br>
+            <button class="btn btn-primary btn-sm"onclick="update_for_sgd()">Single Update</button>
+            <button class="btn btn-primary btn-sm"onclick="autoupdate_for_sgd()">Autoupdate</button>
+            <button class="btn btn-primary btn-sm"id="reset" onclick="reset_sgd()">Reset</button><br>
+            <button class="btn btn-secondary btn-sm"id="toggle_target" onclick="toggle_target()">Target Function</button>
+            <button class="btn btn-secondary btn-sm"id="toggle_batch_error" onclick="toggle_batch_error()">Batch Error</button>
+            <button class="btn btn-secondary btn-sm"id="toggle_gradient" onclick="toggle_gradient()">Gradient</button><br>
             <p><span id='learningrate'></span><br>
             <span id='weight'></span><br>
-            <span id='epoch'></span></p>
+            <span id='epoch'></span><br>
+            Author: <a href="https://kylebradbury.org/">Kyle Bradbury</a></p>
+            
         </div>
           <div class="col-md-3">
             <form>

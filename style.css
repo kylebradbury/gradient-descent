@@ -149,3 +149,11 @@ text.key-text{
   text-anchor: end;
   font-weight: bold;
 }
+
+.btn {
+    margin-bottom: 5px;
+}
+
+h1 {
+  margin-bottom: 0px;
+}

@@ -1,9 +1,29 @@
 /*
 Interactive gradient descent explorer
 Author: Kyle Bradbury
-Idea adapted from: http://bl.ocks.org/WilliamQLiu/76ae20060e19bf42d774
 */
 
+// TODO:
+// [X] Change the target function
+// [ ] Fix toggle for target function (function automatically reappears when new data is drawn)
+// [ ] Make learning rate decay a function of epoch
+// [ ] Make epoch change on batch update (for learning curve plot)
+
+// [ ] Change the data function
+// [ ] Add legend
+// [ ] Checkbox to color the dots (or not)
+// [ ] Toggle for outlining the selected batch points
+// [ ] Show the last point for the SGD update to be able to see the progress more easily
+// [ ] Add convergence criterion based on last 10 batches (if the change in x < delta for 10 consecutive batches)
+// [ ] Update minibatch error when a value is moved
+// [ ] Make gradient line disappear when weight changes
+// [ ] Cut off points at axes (training data)
+// [ ] Resetting deselects the current minibatch
+
+// May be unnecessary:
+// [ ] Checkbox to show/hide target error point
+// [ ] Slider to adjust target weight
+// [ ] Can delete the training data points
 
 /*
 --------------------------------------------
@@ -16,7 +36,8 @@ let EPOCH_MIN = 0,
     NTARGET = 601,
     NWEIGHT = 601,
     NOISE_MAX = 0.5,
-    LR_MAX = 1;
+    LR_MAX = 1,
+    MAX_SCREEN_WIDTH = 768;
 
 // Define parameters that may change interactively
 let XMAX = Math.PI,
@@ -51,13 +72,23 @@ let XMAX = Math.PI,
     show_gradient_line = true,
     show_learning_curve = true,
     error_by_epoch = [],
-    error_within_epoch = [];
+    error_within_epoch = [],
+    f_generator = [],
+    f_grad = [],
+    f_type = 'sin',
+    state = [];
 
 // Parameters for plots
-var w = 400,
-    h = 400,
-    margin = { top: 40, right: 20, bottom: 30, left: 40 };
-let radius = 5;
+let margin = { top: 10, right: 20, bottom: 30, left: 40 },
+    radius = 5,
+    w,h;
+if (window.innerWidth <= MAX_SCREEN_WIDTH) {
+	w = window.innerWidth;
+	h = window.innerHeight / 2 * 0.9;
+} else {
+	w = window.innerWidth/2 * 0.9,
+    h = window.innerHeight*2/3 * 0.9;
+}
 
 /*
 --------------------------------------------
@@ -65,16 +96,47 @@ OPTIONS FOR FUNCTIONS
 --------------------------------------------
 */
 
-function f_generator(w) {
-    a = -1.007;
-    b = 1.4167;
-    return function(x) {
-        return a + (x - b - w)**2 ; 
-    }
-}
-
-function f_grad(d,w) {
-    return 4*(d.y - a - (d.x - b - w)**2)*(d.x - b - w);
+let function_options = {
+	parabola: {
+		func: function(w) {
+		    a = -1.007;
+		    b = 1.4167;
+		    return function(x) {
+		        return a + (x - b - w)**2 ; 
+	    	}
+	    },
+	    grad: function(d,w) {
+    		return 4*(d.y - a - (d.x - b - w)**2)*(d.x - b - w);
+		},
+		XMAX: Math.PI,
+		XMIN: 0,
+	    YMIN: -1.5, 
+	    YMAX: 1.5,
+	    WMIN: -2,
+	    WMAX: 2,
+	    EMIN: 0,
+	    EMAX: 40,
+	    true_weight: 0,
+	},
+	sin: {
+		func:function(w) {
+			return function(x) {
+				return Math.sin(w*x) ;
+			} 
+		},
+		grad: function(d,w) {
+			return (Math.sin(w*d.x) - d.y)*Math.cos(w*d.x)*d.x;
+		},
+		XMAX: Math.PI,
+		XMIN: 0,
+	    YMIN: -1.5, 
+	    YMAX: 1.5,
+		WMIN: 0,
+    	WMAX: 30,
+    	EMIN: 0,
+    	EMAX: 2.5,
+    	true_weight: 5,
+	}
 }
 
 /*
@@ -84,6 +146,28 @@ CODE FOR COMPUTATION
 */
 
 let Engine = function(){
+
+	function select_functions(type) {
+		if (type == 'parabola') {
+			set_options_for_function(function_options.parabola);
+		} else if (type == 'sin') {
+			set_options_for_function(function_options.sin);
+		}
+	}
+
+	function set_options_for_function(f) {
+		f_generator = f.func;
+		f_grad = f.grad;
+		XMIN = f.XMIN;
+		XMAX = f.XMAX;
+	    YMIN = f.YMIN;
+	    YMAX = f.YMAX;
+	    WMIN = f.WMIN;
+	    WMAX = f.WMAX;
+	    EMIN = f.EMIN;
+	    EMAX = f.EMAX;
+	    true_weight = f.true_weight;
+	}
 
 	function linspace(startValue, stopValue, cardinality) {
 	  var arr = [];
@@ -211,6 +295,7 @@ let Engine = function(){
 	    let N = state.data.length ;
 	    if (sgd_mode == 'batch') {
 	        // Return a list of all the indices
+	        new_epoch() ;
 	        return get_range(N);
 	    } else if (sgd_mode == 'minibatch') {
 	        // Check if the pool is empty: if so, refill it
@@ -252,7 +337,7 @@ let Engine = function(){
 	        let epoch_mean_error = mean(error_within_epoch) ;
 	        error_by_epoch.push({x:epoch-1,y:epoch_mean_error});
 	        error_within_epoch = [];
-	        update_learning_curve();
+	        PlotLearningCurve.update_learning_curve();
 	    }
 	}
 
@@ -300,6 +385,7 @@ let Engine = function(){
 
 	// Create a new set of all values for the data
 	function new_scenario() {
+		select_functions(f_type);
 	    let target_function = f_generator(true_weight),
 	        predicted_function = f_generator(w_hat);
 
@@ -325,42 +411,26 @@ let Engine = function(){
 	            hypothesis:hypothesis};
 	}
 
-	function reset_sgd() {
-	    learning_rate = document.getElementById("slideLearningRate").value / 100 * LR_MAX;
-	    epoch = 0;
-	    error_by_epoch = [];
-	    error_within_epoch = [];
-	    update_learning_curve();
-	    document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
-	    document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
-	    document.getElementById('epoch').innerHTML = "Epoch = " + epoch ;
-	}
-
-	function recalculate_error() {
+	// Error associated with each possible weight value
+	function recalculate_error_function_E_of_w() {
 	    recalculate_pointwise_error();
 	    state.error_data = mse(state.weights,state.data);
 	}
 
+	// Noise to be added to the target data
 	function recalculate_noise() {
 	    state.data = corrupt_data(state.noisefree_data, state.noise);
 	    state.error_data = mse(state.weights,state.data)
 	}
 
+	// Target values
 	function recalculate_hypothesis() {
 	    state.hypothesis = gen_function_data(f_generator(w_hat),NTARGET,XMIN,XMAX)  
 	}
 
+	// Error associated with each individual point in the training set
 	function recalculate_pointwise_error() {
 	    state.pointwise_error = square_error(state.data, f_generator(w_hat))
-	}
-
-	// Draw new data and recalculate component values
-	function refresh() {
-	    state = new_scenario();
-	    update_error_line();
-	    update_target_line();
-	    update_hypothesis_line();
-	    update_training_circles();  
 	}
 
 	// Make some of these functions available outside the namespace
@@ -369,333 +439,347 @@ let Engine = function(){
 		get_batch_error:get_batch_error,
 		new_scenario:new_scenario,
 		reset_sgd:reset_sgd,
-		recalculate_error:recalculate_error,
+		recalculate_error_function_E_of_w:recalculate_error_function_E_of_w,
 		recalculate_noise:recalculate_noise,
 		recalculate_hypothesis:recalculate_hypothesis,
-		recalculate_pointwise_error:recalculate_pointwise_error,
-		refresh:refresh
+		recalculate_pointwise_error:recalculate_pointwise_error
 	}
 
 }(); // End Engine (code for computation)
-
-
-
-
-
-
-
-
-
 
 /*
 --------------------------------------------
 PLOT DATA, TARGET, AND ESTIMATE
 --------------------------------------------
 */
+let PlotData = function() {
+	let xScale, yScale, xAxis, yAxis, valueline, svg
 
-// We're passing in a function in d3.max to tell it what we're maxing (x value)
-var xScale = d3.scaleLinear()
-    .domain([XMIN, XMAX])
-    .range([margin.left, w - margin.right]);  // Set margins for x specific
+	function draw() {
+		d3.selectAll('.plotdata').remove();
 
-// We're passing in a function in d3.max to tell it what we're maxing (y value)
-var yScale = d3.scaleLinear()
-    .domain([YMIN, YMAX])
-    .range([h - margin.bottom, margin.top]);  // Set margins for y specific
+		// We're passing in a function in d3.max to tell it what we're maxing (x value)
+		xScale = d3.scaleLinear()
+		    .domain([XMIN, XMAX])
+		    .range([margin.left, w - margin.right]);  // Set margins for x specific
 
-// Add a X and Y Axis (Note: orient means the direction that ticks go, not position)
-var xAxis = d3.axisBottom(xScale);
-var yAxis = d3.axisLeft(yScale);
+		// We're passing in a function in d3.max to tell it what we're maxing (y value)
+		yScale = d3.scaleLinear()
+		    .domain([YMIN, YMAX])
+		    .range([h - margin.bottom, margin.top]);  // Set margins for y specific
 
-// Define the line
-var valueline = d3.line()
-    .x(function(d) { return xScale(d.x); })
-    .y(function(d) { return yScale(d.y); });
+		// Add a X and Y Axis (Note: orient means the direction that ticks go, not position)
+		xAxis = d3.axisBottom(xScale);
+		yAxis = d3.axisLeft(yScale);
 
-// Define the color scale
-var error_color_scale = d3.scaleLinear()
-    .domain([0,2])
-    .range(["orange", "black"])
+		// Define the line
+		valueline = d3.line()
+		    .x(function(d) { return xScale(d.x); })
+		    .y(function(d) { return yScale(d.y); });
 
-var svg = d3.select("#plot_function")
-    .append("svg")
-    .attr("width", w)
-    .attr("height", h);
+		// Define the color scale
+		error_color_scale = d3.scaleLinear()
+		    .domain([0,2])
+		    .range(["orange", "black"])
 
-// Adds X-Axis as a 'g' element
-svg.append("g").attr("class", "axis")
-  .attr("transform", "translate(" + [0, h - margin.bottom] + ")")  // Translate just moves it down into position (or will be on top)
-  .call(d3.axisBottom(xScale));  // Call the xAxis function on the group
+		svg = d3.select("#plot_function")
+		    .append("svg")
+		    .attr("width", w)
+		    .attr("height", h)
+		    .attr("class",'plotdata');
 
-// Adds Y-Axis as a 'g' element
-svg.append("g").attr("class", "axis")
-  .attr("transform", "translate(" + [margin.left, 0] + ")")
-  .call(yAxis);  // Call the yAxis function on the group
+		// Adds X-Axis as a 'g' element
+		svg.append("g").attr("class", "axis")
+		  .attr("transform", "translate(" + [0, h - margin.bottom] + ")")  // Translate just moves it down into position (or will be on top)
+		  .call(d3.axisBottom(xScale));  // Call the xAxis function on the group
 
-// Add axis labels
-svg.append("text")
-    .attr("class", "x label")
-    .attr("text-anchor", "end")
-    .attr("alignment-baseline", "bottom")
-    .attr("x", w)
-    .attr("y", h)
-    .text("x");
+		// Adds Y-Axis as a 'g' element
+		svg.append("g").attr("class", "axis")
+		  .attr("transform", "translate(" + [margin.left, 0] + ")")
+		  .call(yAxis);  // Call the yAxis function on the group
 
-svg.append("text")
-    .attr("class", "y label")
-    .attr("text-anchor", "middle")
-    .attr("y", 6)
-    .attr("dy", ".75em")
-    .attr("x", -margin.top)
-    .attr("transform", "rotate(-90)")
-    .text("f(x,w)");
+		// Add axis labels
+		svg.append("text")
+		    .attr("class", "x label")
+		    .attr("text-anchor", "end")
+		    .attr("alignment-baseline", "bottom")
+		    .attr("x", w)
+		    .attr("y", h)
+		    .text("x");
 
-function update_target_line() {
-    svg.selectAll("path.targetline").remove()
+		svg.append("text")
+		    .attr("class", "y label")
+		    .attr("text-anchor", "middle")
+		    .attr("y", 6)
+		    .attr("dy", ".75em")
+		    .attr("x", -margin.top)
+		    .attr("transform", "rotate(-90)")
+		    .text("f(x,w)");
+	} // draw()
 
-    svg.append("path")
-        .attr("class", "targetline")
-        .attr("id", "target")
-        .attr("d", valueline(state.target));
-}
+	draw();
 
-function update_hypothesis_line() {
-    svg.selectAll("path.hypothesisline").remove()
+	function update_target_line() {
+	    svg.selectAll("path.targetline").remove()
 
-    svg.append("path")
-        .attr("class", "hypothesisline")
-        .attr("id", "hypothesis")
-        .attr("d", valueline(state.hypothesis));
-}
+	    svg.append("path")
+	        .attr("class", "targetline")
+	        .attr("id", "target")
+	        .attr("d", valueline(state.target));
+	}
 
-function update_training_circles() {
-    var training_circles = svg.selectAll("circle")
-    .data(state.data) ;
+	function update_hypothesis_line() {
+	    svg.selectAll("path.hypothesisline").remove()
 
-    training_circles.exit().remove(); 
-    training_circles.enter()
-        .append("circle")
-        .merge(training_circles)
-        .attr("cx", function(d) { return xScale(d.x); })
-        .attr("cy", function(d) { return yScale(d.y); })
-        .attr("r", radius)
-        .attr("index", function(d,i) {return i;})
-        .attr("fill", function(d,i){ 
-            return error_color_scale(state.pointwise_error[i]); 
-        })
-        .attr('class', function(d,i) {
-            if (batch_indices.includes(i)) {
-                return "batch-sample";
-            } else {
-                return "";
-            }
-        })
-        .call(d3.drag()
-                  .on("start", dragstarted)
-                  .on("drag", dragged)
-                  .on("end", dragended)
-                  )
-        .raise();
-}
+	    svg.append("path")
+	        .attr("class", "hypothesisline")
+	        .attr("id", "hypothesis")
+	        .attr("d", valueline(state.hypothesis));
+	}
 
-/*
---------------------------------------------
-DRAG TO CHANGE DATA
---------------------------------------------
-*/
+	function update_training_circles() {
+	    var training_circles = svg.selectAll("circle")
+	    .data(state.data) ;
 
-function dragstarted(d) {
-    let index = d3.select(this).attr("index") ;
-    d.x = d3.event.x;
-    d.y = d3.event.y;
-    d3.select(this).attr("class", "dragging")
-        .attr("r", radius * 1.5)
-        .raise();
-}
+	    training_circles.exit().remove(); 
+	    training_circles.enter()
+	        .append("circle")
+	        .merge(training_circles)
+	        .attr("cx", function(d) { return xScale(d.x); })
+	        .attr("cy", function(d) { return yScale(d.y); })
+	        .attr("r", radius)
+	        .attr("index", function(d,i) {return i;})
+	        .attr("fill", function(d,i){ 
+	            return error_color_scale(state.pointwise_error[i]); 
+	        })
+	        .attr('class', function(d,i) {
+	            if (batch_indices.includes(i)) {
+	                return "batch-sample";
+	            } else {
+	                return "";
+	            }
+	        })
+	        .call(d3.drag()
+	                  .on("start", dragstarted)
+	                  .on("drag", dragged)
+	                  .on("end", dragended)
+	                  )
+	        .raise();
+	}
 
-function dragged(d,i) {
-    // Use d3.mouse instead of d3.event.x to work around issues with scaling the data
-    var coords = d3.mouse(this);
-    let index = d3.select(this).attr("index") ;
+	/*
+	--------------------------------------------
+	DRAG TO CHANGE DATA
+	--------------------------------------------
+	*/
 
-    // Update the datapoint to match the new position
-    d.x = xScale.invert(coords[0]);
-    d.y = yScale.invert(coords[1]);
+	function dragstarted(d) {
+	    let index = d3.select(this).attr("index") ;
+	    d.x = d3.event.x;
+	    d.y = d3.event.y;
+	    d3.select(this).attr("class", "dragging")
+	        .attr("r", radius * 1.5)
+	        .raise();
+	}
 
-    // Check to make sure points don't move off the plot
-    if (d.x < XMIN) {d.x = XMIN;}
-    if (d.x > XMAX) {d.x = XMAX;}
-    if (d.y < YMIN) {d.y = YMIN;}
-    if (d.y > YMAX) {d.y = YMAX;}
+	function dragged(d,i) {
+	    // Use d3.mouse instead of d3.event.x to work around issues with scaling the data
+	    var coords = d3.mouse(this);
+	    let index = d3.select(this).attr("index") ;
 
-    // Redraw the error functions based on the new data
-    Engine.recalculate_error();
-    update_error_line();
+	    // Update the datapoint to match the new position
+	    d.x = xScale.invert(coords[0]);
+	    d.y = yScale.invert(coords[1]);
 
-    d3.select(this)
-        .attr("cx", xScale(d.x))
-        .attr("cy", yScale(d.y))
-        .attr("r", radius * 1.5)
-        .attr("fill", function(d,i){ 
-            return error_color_scale(state.pointwise_error[index]); 
-        })
-        .raise();
-}
+	    // Check to make sure points don't move off the plot
+	    if (d.x < XMIN) {d.x = XMIN;}
+	    if (d.x > XMAX) {d.x = XMAX;}
+	    if (d.y < YMIN) {d.y = YMIN;}
+	    if (d.y > YMAX) {d.y = YMAX;}
 
-function dragended(d) {
-    d3.select(this).attr("class", 'dragged')
-        .attr("r", radius);
-}
+	    // Redraw the error functions based on the new data
+	    Engine.recalculate_error_function_E_of_w();
+	    PlotError.update_error_line();
+
+	    d3.select(this)
+	        .attr("cx", xScale(d.x))
+	        .attr("cy", yScale(d.y))
+	        .attr("r", radius * 1.5)
+	        .attr("fill", function(d,i){ 
+	            return error_color_scale(state.pointwise_error[index]); 
+	        })
+	        .raise();
+	}
+
+	function dragended(d) {
+	    d3.select(this).attr("class", 'dragged')
+	        .attr("r", radius);
+	}
+
+	return {
+		draw:draw,
+		update_target_line:update_target_line,
+		update_hypothesis_line:update_hypothesis_line,
+		update_training_circles:update_training_circles,
+		dragstarted:dragstarted,
+		dragged:dragged,
+		dragended:dragended,
+	}
+}(); // PlotData 
 
 /*
 --------------------------------------------
 PLOT ERROR
 --------------------------------------------
 */
+let PlotError = function() {
+	let xScale_ep, yScale_ep, xAxis_ep, yAxis_ep, valueline_ep, svg_ep
 
-// We're passing in a function in d3.max to tell it what we're maxing (x value)
-var xScale_ep = d3.scaleLinear()
-    .domain([WMIN, WMAX])
-    .range([margin.left, w - margin.right]);  // Set margins for x specific
+	function draw() {
+		// Remove any old plots present
+		d3.selectAll(".ploterror").remove();
 
-// We're passing in a function in d3.max to tell it what we're maxing (y value)
-var yScale_ep = d3.scaleLinear()
-    .domain([EMIN, EMAX])
-    .range([h - margin.bottom, margin.top]);  // Set margins for y specific
+		// We're passing in a function in d3.max to tell it what we're maxing (x value)
+		xScale_ep = d3.scaleLinear()
+		    .domain([WMIN, WMAX])
+		    .range([margin.left, w - margin.right]);  // Set margins for x specific
 
-// Add a X and Y Axis (Note: orient means the direction that ticks go, not position)
-var xAxis_ep = d3.axisBottom(xScale_ep);
-var yAxis_ep = d3.axisLeft(yScale_ep);
+		// We're passing in a function in d3.max to tell it what we're maxing (y value)
+		yScale_ep = d3.scaleLinear()
+		    .domain([EMIN, EMAX])
+		    .range([h - margin.bottom, margin.top]);  // Set margins for y specific
 
-// Define the line
-var valueline_ep = d3.line()
-    .x(function(d) { return xScale_ep(d.x); })
-    .y(function(d) { return yScale_ep(d.y); });
+		// Add a X and Y Axis (Note: orient means the direction that ticks go, not position)
+		xAxis_ep = d3.axisBottom(xScale_ep);
+		yAxis_ep = d3.axisLeft(yScale_ep);
 
-var svg_ep = d3.select("#plot_error")
-    .append("svg")
-    .attr("width", w)
-    .attr("height", h);
+		// Define the line
+		valueline_ep = d3.line()
+		    .x(function(d) { return xScale_ep(d.x); })
+		    .y(function(d) { return yScale_ep(d.y); });
 
-// Adds X-Axis as a 'g' element
-svg_ep.append("g").attr("class", "axis")
-  .attr("transform", "translate(" + [0, h - margin.bottom] + ")")  // Translate just moves it down into position (or will be on top)
-  .call(d3.axisBottom(xScale_ep));  // Call the xAxis function on the group
+		svg_ep = d3.select("#plot_error")
+		    .append("svg")
+		    .attr("width", w)
+		    .attr("height", h)
+		    .attr("class","ploterror");
 
-// Adds Y-Axis as a 'g' element
-svg_ep.append("g").attr("class", "axis")
-  .attr("transform", "translate(" + [margin.left, 0] + ")")
-  .call(yAxis_ep);  // Call the yAxis function on the group
+		// Adds X-Axis as a 'g' element
+		svg_ep.append("g").attr("class", "axis")
+		  .attr("transform", "translate(" + [0, h - margin.bottom] + ")")  // Translate just moves it down into position (or will be on top)
+		  .call(d3.axisBottom(xScale_ep));  // Call the xAxis function on the group
 
-// Add axis labels
-svg_ep.append("text")
-    .attr("class", "x label")
-    .attr("text-anchor", "end")
-    .attr("alignment-baseline", "bottom")
-    .attr("x", w)
-    .attr("y", h)
-    .text("w");
+		// Adds Y-Axis as a 'g' element
+		svg_ep.append("g").attr("class", "axis")
+		  .attr("transform", "translate(" + [margin.left, 0] + ")")
+		  .call(yAxis_ep);  // Call the yAxis function on the group
 
-svg_ep.append("text")
-    .attr("class", "y label")
-    .attr("text-anchor", "middle")
-    .attr("y", 6)
-    .attr("dy", ".75em")
-    .attr("x", -margin.top)
-    .attr("transform", "rotate(-90)")
-    .text("E(w)");
+		// Add axis labels
+		svg_ep.append("text")
+		    .attr("class", "x label")
+		    .attr("text-anchor", "end")
+		    .attr("alignment-baseline", "bottom")
+		    .attr("x", w)
+		    .attr("y", h)
+		    .text("w");
 
-svg_ep.append("rect")
-        .attr("class", "rect-for-mouseover")
-        .attr("width", w)
-        .attr("height", h)
-        .on("mousemove", mousemoved)
-        .on("click", error_plot_clicked);
+		svg_ep.append("text")
+		    .attr("class", "y label")
+		    .attr("text-anchor", "middle")
+		    .attr("y", 6)
+		    .attr("dy", ".75em")
+		    .attr("x", -margin.top)
+		    .attr("transform", "rotate(-90)")
+		    .text("E(w)");
 
-svg_ep.append("path")
-        .attr("class", "true-weight-line")
-        .attr("d", valueline_ep([{x:true_weight, y:EMIN},{x:true_weight, y:EMAX}]));
+		svg_ep.append("rect")
+		        .attr("class", "rect-for-mouseover")
+		        .attr("width", w)
+		        .attr("height", h)
+		        .on("mousemove", mousemoved)
+		        .on("click", error_plot_clicked);
 
-function update_error_line() {
-    svg_ep.selectAll("path.line").remove()
+		svg_ep.append("path")
+		        .attr("class", "true-weight-line")
+		        .attr("d", valueline_ep([{x:true_weight, y:EMIN},{x:true_weight, y:EMAX}]));
 
-    svg_ep.append("path")
-        .attr("class", "line")
-        .attr("d", valueline_ep(state.error_data));
+		// Create a single circle for highlighting selected point
+		old_point = svg_ep.append("circle")
+		    .attr("id","old-error_point");
 
-    update_error_point()
-}
+		svg_ep.append("circle")
+		    .attr("id","error_point")
+		    .on("click", error_plot_clicked);
 
-function update_batch_error_line() {
-    svg_ep.selectAll("path.batch-error-line").remove()
+		svg_ep.append("path")
+		        .attr("class", "gradient")
+		        .attr("d", valueline_ep([
+		            {x:w_hat_old, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))},
+		            {x:w_hat, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))}]));
+	} // draw()
 
-    if (show_batch_error) {
-        svg_ep.append("path")
-            .attr("class", "batch-error-line")
-            .attr("d", valueline_ep(batch_error));
-    }
-}
+	draw();
+	
+	function error_plot_clicked() {
+	    hypothesis_locked = !hypothesis_locked;
+	}
 
-// Create a single circle for highlighting selected point
-old_point = svg_ep.append("circle")
-    .attr("id","old-error_point");
+	function update_error_line() {
+	    svg_ep.selectAll("path.line").remove()
 
-svg_ep.append("circle")
-    .attr("id","error_point")
-    .on("click", error_plot_clicked);
+	    svg_ep.append("path")
+	        .attr("class", "line")
+	        .attr("d", valueline_ep(state.error_data));
 
-svg_ep.append("path")
-        .attr("class", "gradient")
-        .attr("d", valueline_ep([
-            {x:w_hat_old, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))},
-            {x:w_hat, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))}]));
+	    update_error_point()
+	}
 
-function update_gradient_line() {
-    svg_ep.selectAll("path.gradient").remove()
+	function update_batch_error_line() {
+	    svg_ep.selectAll("path.batch-error-line").remove()
 
-    if (show_gradient_line) {
-        svg_ep.append("path")
-            .attr("class", "gradient")
-            .attr("d", valueline_ep([
-                {x:w_hat_old, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))},
-                {x:w_hat, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))}]));
-    }
-}
+	    if (show_batch_error) {
+	        svg_ep.append("path")
+	            .attr("class", "batch-error-line")
+	            .attr("d", valueline_ep(batch_error));
+	    }
+	}
 
-/*
---------------------------------------------
-MOUSE HOVER INTERACTION FOR ERROR PLOT
---------------------------------------------
-*/
+	function update_gradient_line() {
+	    svg_ep.selectAll("path.gradient").remove()
 
-function error_plot_clicked() {
-    hypothesis_locked = !hypothesis_locked;
-}
+	    if (show_gradient_line) {
+	        svg_ep.append("path")
+	            .attr("class", "gradient")
+	            .attr("d", valueline_ep([
+	                {x:w_hat_old, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))},
+	                {x:w_hat, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))}]));
+	    }
+	}
 
-function mousemoved() {
-    if (hypothesis_locked) {return;}
-    var coord = d3.mouse(this);
-    w_hat = xScale_ep.invert(coord[0]);
-    if (w_hat < WMIN) {
-        w_hat = WMIN ;
-    } else if (w_hat > WMAX) {
-        w_hat = WMAX ;
-    }
+	// Mouse hover interaction
+	function mousemoved() {
+	    if (hypothesis_locked) {return;}
+	    var coord = d3.mouse(this);
+	    w_hat = xScale_ep.invert(coord[0]);
+	    if (w_hat < WMIN) {
+	        w_hat = WMIN ;
+	    } else if (w_hat > WMAX) {
+	        w_hat = WMAX ;
+	    }
 
-    selected_weight_index = get_nearest_x(w_hat);
+	    selected_weight_index = get_nearest_x(w_hat);
 
-    // remove_existing_highlight();
-    select_weight(selected_weight_index);
+	    // remove_existing_highlight();
+	    select_weight(selected_weight_index);
 
-    Engine.recalculate_hypothesis();
-    update_hypothesis_line();
-    Engine.recalculate_pointwise_error();
-    update_training_circles();
-}
+	    Engine.recalculate_hypothesis();
+	    PlotData.update_hypothesis_line();
+	    Engine.recalculate_pointwise_error();
+	    PlotData.update_training_circles();
+	}
 
-function select_weight(index) {
+	function select_weight(index) {
     let d = state.error_data[index];
-    // w_hat = state.weights[index];
 
     d3.select('#error_point')
         .attr("fill", "orange")
@@ -707,12 +791,159 @@ function select_weight(index) {
     
 }
 
-function update_error_point() {
-    let d = state.error_data[selected_weight_index];
-    d3.select('#error_point')
-        .attr("cx", xScale_ep(d.x))
-        .attr("cy", yScale_ep(d.y))
-        .raise();
+	function update_error_point() {
+	    let d = state.error_data[selected_weight_index];
+	    d3.select('#error_point')
+	        .attr("cx", xScale_ep(d.x))
+	        .attr("cy", yScale_ep(d.y))
+	        .raise();
+	}
+
+	return {
+		svg:svg_ep,
+		xScale:xScale_ep,
+		yScale:yScale_ep,
+		xAxis:xAxis_ep,
+		yAxis:yAxis_ep,
+		valueline:valueline_ep,
+		update_error_line:update_error_line,
+		update_batch_error_line:update_batch_error_line,
+		update_gradient_line:update_gradient_line,
+		select_weight:select_weight,
+		draw:draw,
+	}
+}(); // PlotError
+
+/*
+--------------------------------------------
+LEARNING CURVE PLOT
+--------------------------------------------
+*/
+let PlotLearningCurve = function() {
+	let h_lc = h/2;
+	let xScale_lc, yScale_lc, xAxis_lc, yAxis_lc, valueline_lc, svg_lc;
+	
+	function draw() {
+		d3.selectAll(".learningcurve").remove()
+
+		// We're passing in a function in d3.max to tell it what we're maxing (x value)
+		xScale_lc = d3.scaleLinear()
+		    .domain([EPOCH_MIN,EPOCH_MAX])
+		    .range([margin.left, w - margin.right]);  // Set margins for x specific
+
+		// We're passing in a function in d3.max to tell it what we're maxing (y value)
+		yScale_lc = d3.scaleLinear()
+		    .domain([EMIN, EMAX])
+		    .range([h_lc - margin.bottom, margin.top]);  // Set margins for y specific
+
+		// Add a X and Y Axis (Note: orient means the direction that ticks go, not position)
+		xAxis_lc = d3.axisBottom(xScale_lc);
+		yAxis_lc = d3.axisLeft(yScale_lc);
+
+		// Define the line
+		valueline_lc = d3.line()
+		    .x(function(d) { return xScale_lc(d.x); })
+		    .y(function(d) { return yScale_lc(d.y); });
+
+		svg_lc = d3.select("#plot_learning_curve")
+		    .append("svg")
+		    .attr("width", w)
+		    .attr("height", h_lc)
+		    .attr("class","learningcurve");
+
+		// Adds X-Axis as a 'g' element
+		svg_lc.append("g").attr("class", "axis")
+		  .attr("transform", "translate(" + [0, h_lc - margin.bottom] + ")")  // Translate just moves it down into position (or will be on top)
+		  .call(d3.axisBottom(xScale_lc));  // Call the xAxis function on the group
+
+		// Adds Y-Axis as a 'g' element
+		svg_lc.append("g").attr("class", "axis")
+		  .attr("transform", "translate(" + [margin.left, 0] + ")")
+		  .call(yAxis_lc);  // Call the yAxis function on the group
+
+		// Add axis labels
+		svg_lc.append("text")
+		    .attr("class", "x label")
+		    .attr("text-anchor", "end")
+		    .attr("alignment-baseline", "bottom")
+		    .attr("x", w)
+		    .attr("y", h_lc-5)
+		    .text("epoch");
+
+		svg_lc.append("text")
+		    .attr("class", "y label")
+		    .attr("text-anchor", "end")
+		    .attr("y", 6)
+		    .attr("dy", ".75em")
+		    .attr("x", -margin.top)
+		    .attr("transform", "rotate(-90)")
+		    .text("Mean E(w) in Epoch");
+	} // draw()
+
+	draw();
+
+	function update_learning_curve() {
+	    svg_lc.selectAll("path.learning-curve").remove()
+
+	    if (show_learning_curve) {
+	        svg_lc.append("path")
+	            .attr("class", "learning-curve")
+	            .attr("d", valueline_lc(error_by_epoch));
+	    }
+	}
+	return {
+		update_learning_curve:update_learning_curve,
+		draw:draw,
+	}
+}();
+
+/*
+--------------------------------------------
+UPDATE FUNCTIONS AND MISC
+--------------------------------------------
+*/
+
+// Draw new data and recalculate component values
+function refresh() {
+    state = Engine.new_scenario();
+    PlotError.update_error_line();
+    PlotData.update_target_line();
+    PlotData.update_hypothesis_line();
+    PlotData.update_training_circles();  
+}
+
+function reset_sgd() {
+    learning_rate = document.getElementById("slideLearningRate").value / 100 * LR_MAX;
+    epoch = 0;
+    error_by_epoch = [];
+    error_within_epoch = [];
+    PlotLearningCurve.update_learning_curve();
+    document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
+    document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
+    document.getElementById('epoch').innerHTML = "Epoch = " + epoch ;
+    d3.selectAll(".gradient").remove();
+}
+
+function update_for_sgd() {
+    Engine.sgd_update()
+    Engine.recalculate_hypothesis();
+    PlotData.update_hypothesis_line();
+    Engine.recalculate_pointwise_error();
+    
+    selected_weight_index = get_nearest_x(w_hat);
+    PlotError.select_weight(selected_weight_index);
+    document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
+    document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
+    document.getElementById('epoch').innerHTML = "Epoch = " + epoch ;
+
+    
+    if (show_batch_error) {
+        Engine.get_batch_error();    
+    }
+    
+    PlotError.update_batch_error_line();
+    PlotData.update_training_circles();
+    PlotError.update_gradient_line();
 }
 
 function get_nearest_x(x) {
@@ -729,31 +960,37 @@ function get_nearest_x(x) {
     return index;
 }
 
-function update_for_sgd() {
-    Engine.sgd_update()
-    Engine.recalculate_hypothesis();
-    update_hypothesis_line();
-    Engine.recalculate_pointwise_error();
-    
-    selected_weight_index = get_nearest_x(w_hat);
-    select_weight(selected_weight_index);
-    document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
-    document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
-    document.getElementById('epoch').innerHTML = "Epoch = " + epoch ;
-
-    
-    if (show_batch_error) {
-        Engine.get_batch_error();    
-    }
-    
-    update_batch_error_line();
-    
-    update_training_circles();
-
-    update_gradient_line();
+function get_new_plot_sizes() {
+	if (window.innerWidth <= MAX_SCREEN_WIDTH) {
+		w = window.innerWidth * 0.9;
+		h = window.innerHeight / 4;
+	} else {
+		w = window.innerWidth/2 * 0.9,
+	    h = window.innerHeight*2/3 * 0.9;
+	}
 }
 
+function replot_all_plots() {
+	get_new_plot_sizes();
+	PlotData.draw();
+	PlotError.draw();
+	PlotLearningCurve.draw();
+	PlotData.update_target_line();
+	PlotData.update_hypothesis_line();
+	PlotData.update_training_circles();
 
+	selected_weight_index = get_nearest_x(w_hat);
+	PlotError.select_weight(selected_weight_index);
+	PlotError.update_error_line();
+}
+
+window.addEventListener('resize', replot_all_plots);
+
+/*
+--------------------------------------------
+FUNCTIONS USED FROM THE MAIN USER INTERFACE
+--------------------------------------------
+*/
 function autoupdate_for_sgd() {
     if (interval_set == true) {
         window.clearInterval(sgd_timer_interval);
@@ -769,10 +1006,10 @@ function toggle_sgd_mode() {
     let buttonlabel = document.getElementById("sgd_mode_toggle");
     if (sgd_mode == 'batch') {
         sgd_mode = 'minibatch';
-        buttonlabel.innerHTML = 'Toggle Mode: ' + sgd_mode ;
+        buttonlabel.innerHTML = 'Minibatch' ;
     } else if (sgd_mode == 'minibatch') {
         sgd_mode = 'batch';
-        buttonlabel.innerHTML = 'Toggle Mode: ' + sgd_mode ;
+        buttonlabel.innerHTML = "Batch" ;
     }
 }
 
@@ -790,178 +1027,149 @@ function toggle_batch_error() {
         Engine.get_batch_error()
     } 
     show_batch_error = !show_batch_error;
-    update_batch_error_line();
+    PlotError.update_batch_error_line();
 }
 
 function toggle_gradient() {
     show_gradient_line = !show_gradient_line;
-    update_gradient_line();
-}
-
-
-/*
---------------------------------------------
-LEARNING CURVE PLOT
---------------------------------------------
-*/
-let h_lc = h/2;
-// We're passing in a function in d3.max to tell it what we're maxing (x value)
-var xScale_lc = d3.scaleLinear()
-    .domain([EPOCH_MIN,EPOCH_MAX])
-    .range([margin.left, w - margin.right]);  // Set margins for x specific
-
-// We're passing in a function in d3.max to tell it what we're maxing (y value)
-var yScale_lc = d3.scaleLinear()
-    .domain([EMIN, EMAX])
-    .range([h_lc - margin.bottom, margin.top]);  // Set margins for y specific
-
-// Add a X and Y Axis (Note: orient means the direction that ticks go, not position)
-var xAxis_lc = d3.axisBottom(xScale_lc);
-var yAxis_lc = d3.axisLeft(yScale_lc);
-
-// Define the line
-var valueline_lc = d3.line()
-    .x(function(d) { return xScale_lc(d.x); })
-    .y(function(d) { return yScale_lc(d.y); });
-
-var svg_lc = d3.select("#plot_learning_curve")
-    .append("svg")
-    .attr("width", w)
-    .attr("height", h_lc);
-
-// Adds X-Axis as a 'g' element
-svg_lc.append("g").attr("class", "axis")
-  .attr("transform", "translate(" + [0, h_lc - margin.bottom] + ")")  // Translate just moves it down into position (or will be on top)
-  .call(d3.axisBottom(xScale_lc));  // Call the xAxis function on the group
-
-// Adds Y-Axis as a 'g' element
-svg_lc.append("g").attr("class", "axis")
-  .attr("transform", "translate(" + [margin.left, 0] + ")")
-  .call(yAxis_lc);  // Call the yAxis function on the group
-
-// Add axis labels
-svg_lc.append("text")
-    .attr("class", "x label")
-    .attr("text-anchor", "end")
-    .attr("alignment-baseline", "bottom")
-    .attr("x", w)
-    .attr("y", h_lc-5)
-    .text("epoch");
-
-svg_lc.append("text")
-    .attr("class", "y label")
-    .attr("text-anchor", "end")
-    .attr("y", 6)
-    .attr("dy", ".75em")
-    .attr("x", -margin.top)
-    .attr("transform", "rotate(-90)")
-    .text("Mean E(w) in Epoch");
-
-
-function update_learning_curve() {
-    svg_lc.selectAll("path.learning-curve").remove()
-
-    if (show_learning_curve) {
-        svg_lc.append("path")
-            .attr("class", "learning-curve")
-            .attr("d", valueline_lc(error_by_epoch));
-    }
+    PlotError.update_gradient_line();
 }
 
 /*
 --------------------------------------------
-NUMBER OF TRAINING POINTS CONTROL SLIDER
+SLIDER CONTROLS AND INTERACTIONS
 --------------------------------------------
 */
-// Note: since the slider is restricted to whole numbers, we have to convert from 0 to 100:
 
-var sliderNumSamples = document.getElementById("slideNumSamples");
-var numsamples_slider = document.getElementById("slideNumSamplesLabel");
-sliderNumSamples.value = Math.round(nData / NMAX * 100); 
-numsamples_slider.innerHTML = "Number of training datapoints = " + nData; // Display the default slider value
+let Slider = function(config) {
+	var slider_element = document.getElementById(config.slider_element);
+	var slider_label = document.getElementById(config.slider_label);
+	slider_element.value = config.value / config.max_value * 100; 
+	slider_label.innerHTML = config.slider_label_name + " = " + config.value.toFixed(config.to_fixed); // Display the default slider value
 
-// Update the current slider value (each time you drag the slider handle)
-sliderNumSamples.oninput = function() {
-    nData = Math.round(this.value /100 * NMAX);
-    numsamples_slider.innerHTML = "Number of training datapoints = " + nData;
-    indices_sgd = []
-    Engine.refresh();
+	// Update the current slider value (each time you drag the slider handle)
+	slider_element.oninput = function() {
+	    config.value = this.value /100 * config.max_value;
+	    config.setval(config.value);
+	    slider_label.innerHTML = config.slider_label_name + " = " + config.value.toFixed(config.to_fixed);
+	    config.func();
+	}
 }
 
-/*
---------------------------------------------
-NOISE CONTROL SLIDER
---------------------------------------------
-*/
-// Note: since the slider is restricted to whole numbers, we have to convert from 0 to 100:
+let config_slider_n_training, 
+	config_slider_noise,
+	config_slider_learning_rate,
+	config_slider_batch_size;
 
-var sliderNoise = document.getElementById("slideNoise");
-var noise_slider = document.getElementById("slideNoiseLabel");
-sliderNoise.value = Math.round(noise_std / NOISE_MAX * 100); 
-noise_slider.innerHTML = "Noise std = " + noise_std; // Display the default slider value
 
-// Update the current slider value (each time you drag the slider handle)
-sliderNoise.oninput = function() {
-    noise_std = this.value /100 * NOISE_MAX;
-    noise_slider.innerHTML = "Noise std = " + noise_std;
+function update_sliders() {
+	config_slider_n_training = {
+		slider_element: "slideNumSamples",
+		slider_label: "slideNumSamplesLabel",
+		slider_label_name: "Number of training datapoints",
+		value: nData,
+		max_value: NMAX,
+		to_fixed: 0,
+		setval: function(value) {
+			nData = Math.round(value);
+		},
+		func: function() {
+			indices_sgd = [];
+    		refresh();
+		}
+	};
 
-    // Update the plot
-    recalculate_noise()
-    update_training_circles();
-    update_error_line();
+	config_slider_noise = {
+		slider_element: "slideNoise",
+		slider_label: "slideNoiseLabel",
+		slider_label_name:"Noise std",
+		value: noise_std,
+		max_value: NOISE_MAX,
+		to_fixed: 3,
+		setval: function(value) {
+			noise_std = value;
+		},
+		func: function() {
+			Engine.recalculate_noise()
+    		PlotData.update_training_circles();
+    		PlotError.update_error_line();
+		}
+	};
+
+	config_slider_learning_rate = {
+		slider_element: "slideLearningRate",
+		slider_label: "slideLearningRateLabel",
+		slider_label_name:"Learning rate",
+		value: learning_rate,
+		max_value: LR_MAX,
+		to_fixed: 3,
+		setval: function(value) {
+			learning_rate = value;
+		},
+		func: function() {
+		}
+	};
+
+	config_slider_batch_size = {
+		slider_element: "slideBatchSize",
+		slider_label: "slideBatchSizeLabel",
+		slider_label_name:"Batch size",
+		value: batchsize,
+		max_value: nData,
+		to_fixed: 0,
+		setval: function(value) {
+			batchsize = Math.round(value);
+		},
+		func: function() {
+			indices_sgd = [];
+		}
+	};
+
+	Slider(config_slider_n_training);
+	Slider(config_slider_noise);
+	Slider(config_slider_learning_rate);
+	Slider(config_slider_batch_size);
+
 }
 
-/*
---------------------------------------------
-LEARNING RATE CONTROL SLIDER
---------------------------------------------
-*/
-// Note: since the slider is restricted to whole numbers, we have to convert from 0 to 100:
+let FunctionDropdown = function() {
+	var dropdown = document.getElementById('funcs');
+	dropdown.oninput = function() {
+		if (dropdown.value != f_type) {
+			f_type = dropdown.value;
+			state = Engine.new_scenario();
+			PlotData.draw();
+			PlotError.draw();
+			PlotLearningCurve.draw();
+			PlotData.update_target_line();
+			PlotData.update_hypothesis_line();
+			PlotData.update_training_circles();
 
-var sliderLearningRate = document.getElementById("slideLearningRate");
-var learning_rate_slider = document.getElementById("slideLearningRateLabel");
-sliderLearningRate.value = Math.round(learning_rate / LR_MAX * 100); 
-learning_rate_slider.innerHTML = "Learning rate = " + learning_rate; // Display the default slider value
-
-// Update the current slider value (each time you drag the slider handle)
-sliderLearningRate.oninput = function() {
-    learning_rate = this.value /100 * LR_MAX;
-    learning_rate_slider.innerHTML = "Learning rate = " + learning_rate.toFixed(2);
-}
-
-/*
---------------------------------------------
-BATCH SIZE CONTROL SLIDER
---------------------------------------------
-*/
-// Note: since the slider is restricted to whole numbers, we have to convert from 0 to 100:
-
-var sliderBatchSize = document.getElementById("slideBatchSize");
-var batch_size_slider = document.getElementById("slideBatchSizeLabel");
-sliderBatchSize.value = Math.round(batchsize / nData * 100); 
-batch_size_slider.innerHTML = "Batch size = " + batchsize; // Display the default slider value
-
-// Update the current slider value (each time you drag the slider handle)
-sliderBatchSize.oninput = function() {
-    batchsize = Math.round(this.value /100 * nData);
-    if (batchsize < 1) {batchsize = 1;}
-    batch_size_slider.innerHTML = "Batch size = " + batchsize;
-    indices_sgd = []
-}
+			selected_weight_index = get_nearest_x(w_hat);
+			PlotError.select_weight(selected_weight_index);
+			PlotError.update_error_line();
+			update_sliders();
+			reset_sgd()
+		}
+	}
+}();
 
 /*
 --------------------------------------------
 INITIATE THE PLOTS
 --------------------------------------------
 */
-var state = Engine.new_scenario();
-
-update_target_line();
-update_hypothesis_line();
-update_training_circles();
+get_new_plot_sizes();
+state = Engine.new_scenario();
+PlotData.draw();
+PlotError.draw();
+PlotLearningCurve.draw();
+PlotData.update_target_line();
+PlotData.update_hypothesis_line();
+PlotData.update_training_circles();
 
 selected_weight_index = get_nearest_x(w_hat);
-select_weight(selected_weight_index);
-
-update_error_line();
-
+PlotError.select_weight(selected_weight_index);
+PlotError.update_error_line();
+update_sliders();
+reset_sgd();
