@@ -8,12 +8,20 @@
     <!-- Load D3 from site -->
     <script src="https://d3js.org/d3.v5.min.js"></script>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+
+    <!-- Also include Mathjax-->
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async
+            src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+    </script>
+
     <link rel="stylesheet" href="style.css">
   </head>
 
   <body>
     <div class=container-fluid>
-      <h1 class="display-4">Gradient Descent Explorer</h1>
+      <!-- Gradient Explorer Tool Section -->
+      <h1 class="font-weight-light">Gradient Descent Explorer</h1>
       <div class="row">
 
         <div class="col-md-6">
@@ -24,64 +32,60 @@
           <div id="plot_error"></div>
         </div>
 
-        </div>
+      </div>
       <div class="row">
-        <div class="col-md-3">
-            <label for="funcs">Choose a target function:</label>
-            <select id="funcs">
-              <option value="sin">Sine</option>
-              <option value="parabola">Parabola</option>
-            </select><br>
-            <button class="btn btn-primary btn-sm" onclick="refresh(); reset_sgd()">New Data</button>
-            <button class="btn btn-primary btn-sm"id="sgd_mode_toggle" onclick="toggle_sgd_mode()">Minibatch</button><br>
-            <button class="btn btn-primary btn-sm"onclick="update_for_sgd()">Single Update</button>
-            <button class="btn btn-primary btn-sm"onclick="autoupdate_for_sgd()">Autoupdate</button>
-            <button class="btn btn-primary btn-sm"id="reset" onclick="reset_sgd()">Reset</button><br>
-            <button class="btn btn-secondary btn-sm"id="toggle_target" onclick="toggle_target()">Target Function</button>
-            <button class="btn btn-secondary btn-sm"id="toggle_batch_error" onclick="toggle_batch_error()">Batch Error</button>
-            <button class="btn btn-secondary btn-sm"id="toggle_gradient" onclick="toggle_gradient()">Gradient</button><br>
-            <p><span id='learningrate'></span><br>
-            <span id='weight'></span><br>
-            <span id='epoch'></span><br>
-            Author: <a href="https://kylebradbury.org/">Kyle Bradbury</a></p>
-            
+        <div class="col-md-6">
+          <div id="plot_learning_curve"></div>
         </div>
-          <div class="col-md-3">
-            <form>
-              <div class="slidecontainer">
-                <label for="slideNumSamples" id="slideNumSamplesLabel"></label>
-                <input type="range" min="1" max="100" value="9" class="form-control-range" id="slideNumSamples">
-              </div>
-            </form>
-            <br>
-            <form>
-              <div class="slidecontainer">
-                <label for="slideNoise" id="slideNoiseLabel"></label>
-                <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideNoise">
-              </div>
-            </form>
-            <br>
-            <form>
-              <div class="slidecontainer">
-                <label for="slideLearningRate" id="slideLearningRateLabel"></label>
-                <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideLearningRate">
-              </div>
-            </form>
-            <br>
-            <form>
-              <div class="slidecontainer">
-                <label for="slideBatchSize" id="slideBatchSizeLabel"></label>
-                <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideBatchSize">
-              </div>
-            </form>
-          </div>
 
-          <div class="col-md-6">
-            <div id="plot_learning_curve"></div>
-          </div>
+        <div class="col-md-3">
+          <form>
+            <div class="slidecontainer">
+              <label for="slideNumSamples" id="slideNumSamplesLabel"></label>
+              <input type="range" min="0" max="100" value="9" class="form-control-range" id="slideNumSamples">
+            </div>
+            <div class="slidecontainer">
+              <label for="slideNoise" id="slideNoiseLabel"></label>
+              <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideNoise">
+            </div>
+            <div class="slidecontainer">
+              <label for="slideLearningRate" id="slideLearningRateLabel"></label>
+              <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideLearningRate">
+            </div>
+            <div class="slidecontainer">
+              <label for="slideBatchSize" id="slideBatchSizeLabel"></label>
+              <input type="range" min="0" max="100" value="50" class="form-control-range" id="slideBatchSize">
+            </div>
+          </form>
+        </div>
+
+        <div class="col-md-3">
+          <label for="func_target">Target function:</label>
+          <select id="func_target">
+            <option value="sin">Sine</option>
+            <option value="cos">Cosine</option>
+            <option value="parabola">Parabola</option>
+          </select><br>
+          <label for="func_hypothesis">Hypothesis function:</label>
+          <select id="func_hypothesis">
+            <option value="sin">Sine</option>
+            <option value="cos">Cosine</option>
+            <option value="parabola">Parabola</option>
+          </select><br>
+          <button class="btn btn-primary btn-sm" onclick="refresh(); reset_sgd()">New Data</button>
+          <button class="btn btn-primary btn-sm"id="sgd_mode_toggle" onclick="toggle_sgd_mode()">Minibatch</button><br>
+          <button class="btn btn-primary btn-sm"onclick="update_for_sgd()">Single Update</button>
+          <button class="btn btn-primary btn-sm"onclick="autoupdate_for_sgd()">Autoupdate</button>
+          <button class="btn btn-primary btn-sm"id="reset" onclick="reset_sgd()">Reset</button><br>
+          <button class="btn btn-secondary btn-sm"id="toggle_target" onclick="toggle_target()">Target Function</button>
+          <button class="btn btn-secondary btn-sm"id="toggle_batch_error" onclick="toggle_batch_error()">Batch Error</button>
+          <button class="btn btn-secondary btn-sm"id="toggle_gradient" onclick="toggle_gradient()">Gradient</button><br>
+          <p><span id='learningrate'></span><br>
+          <span id='weight'></span><br>
+          <span id='epoch'></span></p>
+        </div>
       </div>
     </div>
-    
 
     <script src="./grad_descent.js"></script>
   </body>

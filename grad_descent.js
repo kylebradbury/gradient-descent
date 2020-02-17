@@ -4,26 +4,24 @@ Author: Kyle Bradbury
 */
 
 // TODO:
-// [X] Change the target function
-// [ ] Fix toggle for target function (function automatically reappears when new data is drawn)
-// [ ] Make learning rate decay a function of epoch
-// [ ] Make epoch change on batch update (for learning curve plot)
-
-// [ ] Change the data function
+// [X] Fix toggle for target function (function automatically reappears when new data is drawn)
+// [X] Make the learning rate slider log-scaled
+// [X] Make sure gradients and batch error appears for all replots / function changes
+// [ ] Add more interesting functions
+// [X] Have gradient appear on initial load
 // [ ] Add legend
-// [ ] Checkbox to color the dots (or not)
-// [ ] Toggle for outlining the selected batch points
-// [ ] Show the last point for the SGD update to be able to see the progress more easily
-// [ ] Add convergence criterion based on last 10 batches (if the change in x < delta for 10 consecutive batches)
-// [ ] Update minibatch error when a value is moved
-// [ ] Make gradient line disappear when weight changes
 // [ ] Cut off points at axes (training data)
-// [ ] Resetting deselects the current minibatch
+// [ ] Resize axes to fit all the data
 
 // May be unnecessary:
+// [ ] Make learning rate decay a function of epoch
 // [ ] Checkbox to show/hide target error point
 // [ ] Slider to adjust target weight
 // [ ] Can delete the training data points
+// [ ] Add convergence criterion based on last 10 batches (if the change in x < delta for 10 consecutive batches)
+// [ ] Checkbox to color the dots (or not)
+
+// Completed:
 
 /*
 --------------------------------------------
@@ -36,7 +34,8 @@ let EPOCH_MIN = 0,
     NTARGET = 601,
     NWEIGHT = 601,
     NOISE_MAX = 0.5,
-    LR_MAX = 1,
+	LR_MAX = 10,
+	LR_MIN = 0.001,
     MAX_SCREEN_WIDTH = 768;
 
 // Define parameters that may change interactively
@@ -48,18 +47,22 @@ let XMAX = Math.PI,
     WMAX = 2,
     EMIN = 0,
     EMAX = 2.5*10,
-    NMAX = 300,
+    NMAX = 200,
 	true_weight = 0,
+	global_min_weight = [],
 	nData = 100,
-    w_hat = 10,
-    w_hat_old = 10,
+	w_hat = 10,
+	w_hat_new = 10,
+	w_hat_old = 10,
+	gradient_step = 0,
     selected_weight_index = [],
     noise_std = 0.25,
     hypothesis_locked = false,
     indices_sgd = [],
     sgd_mode = 'minibatch',
     batchsize = 4,
-    learning_rate = 0.5,
+	learning_rate = 0.5,
+	learning_rate_stored = 0.5,
     learning_rate_decay = 0.9999,
     sgd_timer_interval = [],
     interval_set = false,
@@ -67,28 +70,40 @@ let XMAX = Math.PI,
     full_gradient = 0,
     batch_indices = [],
     batch_error = [],
-    show_target_function = true,
-    show_batch_error = true,
-    show_gradient_line = true,
-    show_learning_curve = true,
+    show_target_function = false,
+	show_batch_error = false,
+	show_minibatch = false,
+    show_gradient_line = false,
+	show_learning_curve = true,
+	show_true_weight_line = true,
+	changed_batch_size = false,
     error_by_epoch = [],
     error_within_epoch = [],
-    f_generator = [],
+    f_target = [],
+    f_hypothesis = [],
     f_grad = [],
-    f_type = 'sin',
+    f_type_target = 'sin',
+    f_type_hypothesis = 'sin',
     state = [];
 
 // Parameters for plots
 let margin = { top: 10, right: 20, bottom: 30, left: 40 },
     radius = 5,
     w,h;
-if (window.innerWidth <= MAX_SCREEN_WIDTH) {
-	w = window.innerWidth;
-	h = window.innerHeight / 2 * 0.9;
-} else {
-	w = window.innerWidth/2 * 0.9,
-    h = window.innerHeight*2/3 * 0.9;
+
+function get_new_plot_sizes() {
+	if (window.innerWidth <= MAX_SCREEN_WIDTH) {
+		w = window.innerWidth * 0.9;
+		h = window.innerHeight / 3 * 0.9;
+		h_lc = h;
+	} else {
+		w = window.innerWidth/2 * 0.85,
+	    h = window.innerHeight*2/3 * 0.9;
+	    h_lc = h/2;
+	}
 }
+
+get_new_plot_sizes();
 
 /*
 --------------------------------------------
@@ -115,7 +130,7 @@ let function_options = {
 	    WMIN: -2,
 	    WMAX: 2,
 	    EMIN: 0,
-	    EMAX: 40,
+		EMAX: 40,
 	    true_weight: 0,
 	},
 	sin: {
@@ -132,12 +147,37 @@ let function_options = {
 	    YMIN: -1.5, 
 	    YMAX: 1.5,
 		WMIN: 0,
-    	WMAX: 30,
+    	WMAX: 20,
     	EMIN: 0,
     	EMAX: 2.5,
     	true_weight: 5,
-	}
+	},
+	cos: {
+		func:function(w) {
+			return function(x) {
+				return Math.cos(w*x) ;
+			} 
+		},
+		grad: function(d,w) {
+			return -(Math.cos(w*d.x) - d.y)*Math.sin(w*d.x)*d.x;
+		},
+		XMAX: Math.PI,
+		XMIN: 0,
+	    YMIN: -1.5, 
+	    YMAX: 1.5,
+		WMIN: -1,
+    	WMAX: 20,
+    	EMIN: 0,
+    	EMAX: 2.5,
+    	true_weight: 5,
+	},
 }
+
+let f_mapping = {
+	'sin':function_options.sin,
+	'parabola':function_options.parabola,
+	'cos':function_options.cos,
+};
 
 /*
 --------------------------------------------
@@ -147,26 +187,23 @@ CODE FOR COMPUTATION
 
 let Engine = function(){
 
-	function select_functions(type) {
-		if (type == 'parabola') {
-			set_options_for_function(function_options.parabola);
-		} else if (type == 'sin') {
-			set_options_for_function(function_options.sin);
-		}
+	function select_functions(target,hypothesis) {
+		set_options_for_function(f_mapping[target],f_mapping[hypothesis]);
 	}
 
-	function set_options_for_function(f) {
-		f_generator = f.func;
-		f_grad = f.grad;
-		XMIN = f.XMIN;
-		XMAX = f.XMAX;
-	    YMIN = f.YMIN;
-	    YMAX = f.YMAX;
-	    WMIN = f.WMIN;
-	    WMAX = f.WMAX;
-	    EMIN = f.EMIN;
-	    EMAX = f.EMAX;
-	    true_weight = f.true_weight;
+	function set_options_for_function(f_tar, f_hyp) {
+		f_target = f_tar.func;
+		f_hypothesis = f_hyp.func;
+		f_grad = f_hyp.grad;
+		XMIN = f_hyp.XMIN;
+		XMAX = f_hyp.XMAX;
+	    YMIN = f_hyp.YMIN;
+	    YMAX = f_hyp.YMAX;
+	    WMIN = f_hyp.WMIN;
+	    WMAX = f_hyp.WMAX;
+	    EMIN = f_hyp.EMIN;
+	    EMAX = f_hyp.EMAX;
+	    true_weight = f_tar.true_weight; // Only applicable when f_tar==f_hyp
 	}
 
 	function linspace(startValue, stopValue, cardinality) {
@@ -181,7 +218,7 @@ let Engine = function(){
 	function mse(weights,data) {
 	    let N = data.length;
 	    let err = weights.map(function(w){
-	        return sum_squared_error(data,f_generator(w)) / N ;
+	        return sum_squared_error(data,f_hypothesis(w)) / N ;
 	    })
 	    return make_d3_ready({x:weights, y:err}) ;
 	}
@@ -195,10 +232,10 @@ let Engine = function(){
 	function save_current_error() {
 		function get_current_error(weight,data) {
 	    	let N = data.length;
-	    	return sum_squared_error(data,f_generator(weight)) / N ;
+	    	return sum_squared_error(data,f_hypothesis(weight)) / N ;
 		}
 
-	    err = get_current_error(w_hat_old,state.data);
+	    err = get_current_error(w_hat,state.data);
 	    error_within_epoch.push(err);
 	}
 
@@ -277,10 +314,8 @@ let Engine = function(){
 	function gradient() {
 	    let w = w_hat,
 	        grad = 0,
-	        cgrad = [],
 	        d = [];
 	    
-	    batch_indices = get_next_batch();
 	    let N = batch_indices.length;
 
 	    batch_indices.forEach(function(i){
@@ -294,12 +329,15 @@ let Engine = function(){
 	function get_next_batch() {
 	    let N = state.data.length ;
 	    if (sgd_mode == 'batch') {
-	        // Return a list of all the indices
-	        new_epoch() ;
-	        return get_range(N);
+			// Return a list of all the indices
+			if (!changed_batch_size) {
+				new_epoch() ;
+			}
+	        batch_indices = get_range(N);
 	    } else if (sgd_mode == 'minibatch') {
 	        // Check if the pool is empty: if so, refill it
-	        return draw_indices(batchsize) ;
+			batch_indices = draw_indices(batchsize) ;
+			// console.log(batchsize);
 	    }
 	}
 
@@ -321,7 +359,9 @@ let Engine = function(){
 	        if (nAvailableIndices == 0) {
 	            indices_sgd = get_range(state.data.length);
 	            nAvailableIndices = indices_sgd.length;
-	            new_epoch() ;
+	            if (!changed_batch_size) {
+					new_epoch() ;
+				}
 	        }
 	        // Draw one value and remove it from the index
 	        let randomIndex = Math.floor(Math.random()*nAvailableIndices); 
@@ -332,13 +372,14 @@ let Engine = function(){
 	}
 
 	function new_epoch() {
-	    epoch++;
-	    if (epoch <= EPOCH_MAX) {
+	    if ((epoch <= EPOCH_MAX) && (epoch !=0)) {
 	        let epoch_mean_error = mean(error_within_epoch) ;
 	        error_by_epoch.push({x:epoch-1,y:epoch_mean_error});
 	        error_within_epoch = [];
 	        PlotLearningCurve.update_learning_curve();
-	    }
+		}
+		epoch++;
+		console.log(epoch);
 	}
 
 	function mean(x) {
@@ -348,26 +389,39 @@ let Engine = function(){
 	    return sumx / x.length
 	}
 
-	function sgd_update() {
-	    // Save the error to an array for learning curves
-	    save_current_error()
+	function clear_batches() {
+		batch_indices = [];
+    	batch_error = [];
+	}
 
-	    // Get the gradient
+	function sgd_compute() {
+		// Get the gradient
 	    let grad = gradient() ;
 
 	    // Calculate new value for w
-	    w_hat_old = w_hat;
-	    w_hat = w_hat - learning_rate * grad;
+		gradient_step = - learning_rate * grad;
+	    w_hat_new = w_hat + gradient_step;
 
 	    // Keep the selection within bounds on the plot
-	    if (w_hat < WMIN) {
-	        w_hat = WMIN ;
-	    } else if (w_hat > WMAX) {
-	        w_hat = WMAX ;
+	    if (w_hat_new < WMIN) {
+	        w_hat_new = WMIN ;
+	    } else if (w_hat_new > WMAX) {
+	        w_hat_new = WMAX ;
 	    }
+	}
+
+	function sgd_update() {
+	    // Save the error to an array for learning curves
+	    save_current_error();
+		sgd_compute();
+
+		w_hat = w_hat_new;
 
 	    // Reduce the learning rate over time
-	    learning_rate = learning_rate_decay*learning_rate;
+		learning_rate = learning_rate_decay*learning_rate;
+		
+		// Draw the next batch
+		get_next_batch();
 	}
 
 	function get_batch_error() {
@@ -383,11 +437,21 @@ let Engine = function(){
 	    return data;
 	}
 
+	function update_min_weight_val() {
+		let minval = 10e6;
+		state.error_data.forEach(function(d) {
+			if (d.y < minval) {
+				minval = d.y;
+				global_min_weight = d.x;
+			}
+		});
+	}
+
 	// Create a new set of all values for the data
 	function new_scenario() {
-		select_functions(f_type);
-	    let target_function = f_generator(true_weight),
-	        predicted_function = f_generator(w_hat);
+		select_functions(f_type_target,f_type_hypothesis);
+	    let target_function = f_target(true_weight),
+	        predicted_function = f_hypothesis(w_hat);
 
 	    let target = gen_function_data(target_function,NTARGET,XMIN,XMAX),
 	        noisefree_data = gen_function_data_random_x(target_function,nData,XMAX,XMIN),
@@ -395,12 +459,12 @@ let Engine = function(){
 	        data = corrupt_data(noisefree_data, noise);
 	        weights = linspace(WMIN,WMAX,NWEIGHT),
 	        error_data = mse(weights,data),
-	        pointwise_error = square_error(data, predicted_function)
+			pointwise_error = square_error(data, predicted_function)
 	        hypothesis = [] ;
 	        if (w_hat !== '') {
-	            hypothesis = gen_function_data(predicted_function,NTARGET,XMIN,XMAX)  
-	        }
-	        
+	            hypothesis = gen_function_data(predicted_function,NTARGET,XMIN,XMAX);
+			}
+			
 	    return {target:target, 
 	            noisefree_data:noisefree_data,
 	            noise:noise,
@@ -408,13 +472,14 @@ let Engine = function(){
 	            weights:weights, 
 	            error_data:error_data,
 	            pointwise_error:pointwise_error,
-	            hypothesis:hypothesis};
+				hypothesis:hypothesis};
 	}
 
 	// Error associated with each possible weight value
 	function recalculate_error_function_E_of_w() {
-	    recalculate_pointwise_error();
-	    state.error_data = mse(state.weights,state.data);
+		recalculate_pointwise_error();
+		state.error_data = mse(state.weights,state.data);
+		update_min_weight_val();
 	}
 
 	// Noise to be added to the target data
@@ -425,24 +490,27 @@ let Engine = function(){
 
 	// Target values
 	function recalculate_hypothesis() {
-	    state.hypothesis = gen_function_data(f_generator(w_hat),NTARGET,XMIN,XMAX)  
+	    state.hypothesis = gen_function_data(f_hypothesis(w_hat),NTARGET,XMIN,XMAX)  
 	}
 
 	// Error associated with each individual point in the training set
 	function recalculate_pointwise_error() {
-	    state.pointwise_error = square_error(state.data, f_generator(w_hat))
+	    state.pointwise_error = square_error(state.data, f_hypothesis(w_hat))
 	}
 
 	// Make some of these functions available outside the namespace
 	return {
 		sgd_update:sgd_update,
+		sgd_compute:sgd_compute,
 		get_batch_error:get_batch_error,
 		new_scenario:new_scenario,
-		reset_sgd:reset_sgd,
 		recalculate_error_function_E_of_w:recalculate_error_function_E_of_w,
 		recalculate_noise:recalculate_noise,
 		recalculate_hypothesis:recalculate_hypothesis,
-		recalculate_pointwise_error:recalculate_pointwise_error
+		recalculate_pointwise_error:recalculate_pointwise_error,
+		update_min_weight_val:update_min_weight_val,
+		clear_batches:clear_batches,
+		get_next_batch:get_next_batch,
 	}
 
 }(); // End Engine (code for computation)
@@ -499,6 +567,7 @@ let PlotData = function() {
 		  .call(yAxis);  // Call the yAxis function on the group
 
 		// Add axis labels
+		// X-Label
 		svg.append("text")
 		    .attr("class", "x label")
 		    .attr("text-anchor", "end")
@@ -507,6 +576,7 @@ let PlotData = function() {
 		    .attr("y", h)
 		    .text("x");
 
+		// Y-Label
 		svg.append("text")
 		    .attr("class", "y label")
 		    .attr("text-anchor", "middle")
@@ -514,7 +584,27 @@ let PlotData = function() {
 		    .attr("dy", ".75em")
 		    .attr("x", -margin.top)
 		    .attr("transform", "rotate(-90)")
-		    .text("f(x,w)");
+			.text("f(x,w)");
+		
+		// Legend
+		svg.append("text")
+		    .attr("class", "legend")
+			.attr("text-anchor", "end")
+			.attr("vertical-align", "baseline")
+		    .attr("y", 0.91*h)
+			.attr("x", 0.95*w)
+			.attr("fill",'grey')
+			.text("Target Function");
+
+		svg.append("text")
+		    .attr("class", "legend")
+			.attr("text-anchor", "end")
+			.attr("vertical-align", "baseline")
+		    .attr("y", 0.89*h)
+			.attr("x", 0.95*w)
+			.attr("fill",'orange')
+			.text("Hypothesis Function");
+
 	} // draw()
 
 	draw();
@@ -525,7 +615,14 @@ let PlotData = function() {
 	    svg.append("path")
 	        .attr("class", "targetline")
 	        .attr("id", "target")
-	        .attr("d", valueline(state.target));
+			.attr("d", valueline(state.target))
+			.attr("visibility", function(){
+				if (show_target_function) {
+					return "visible";
+				} else {
+					return "hidden";
+				}
+			});
 	}
 
 	function update_hypothesis_line() {
@@ -553,7 +650,7 @@ let PlotData = function() {
 	            return error_color_scale(state.pointwise_error[i]); 
 	        })
 	        .attr('class', function(d,i) {
-	            if (batch_indices.includes(i)) {
+	            if (batch_indices.includes(i) && show_minibatch) {
 	                return "batch-sample";
 	            } else {
 	                return "";
@@ -577,7 +674,7 @@ let PlotData = function() {
 	    let index = d3.select(this).attr("index") ;
 	    d.x = d3.event.x;
 	    d.y = d3.event.y;
-	    d3.select(this).attr("class", "dragging")
+	    d3.select(this)
 	        .attr("r", radius * 1.5)
 	        .raise();
 	}
@@ -598,8 +695,15 @@ let PlotData = function() {
 	    if (d.y > YMAX) {d.y = YMAX;}
 
 	    // Redraw the error functions based on the new data
-	    Engine.recalculate_error_function_E_of_w();
-	    PlotError.update_error_line();
+		Engine.recalculate_error_function_E_of_w();
+		Engine.get_batch_error();
+		PlotError.update_error_line();
+		PlotError.update_true_weight_line();
+		PlotError.update_batch_error_line();
+
+		Engine.sgd_compute();
+		PlotError.update_gradient_line();
+
 
 	    d3.select(this)
 	        .attr("cx", xScale(d.x))
@@ -607,12 +711,19 @@ let PlotData = function() {
 	        .attr("r", radius * 1.5)
 	        .attr("fill", function(d,i){ 
 	            return error_color_scale(state.pointwise_error[index]); 
+			})
+			.attr('class', function(d,i) {
+	            if (batch_indices.includes(+index) && show_minibatch) {
+	                return "batch-sample";
+	            } else {
+	                return "";
+	            }
 	        })
 	        .raise();
 	}
 
 	function dragended(d) {
-	    d3.select(this).attr("class", 'dragged')
+	    d3.select(this)
 	        .attr("r", radius);
 	}
 
@@ -699,9 +810,10 @@ let PlotError = function() {
 		        .on("mousemove", mousemoved)
 		        .on("click", error_plot_clicked);
 
+		// Draw the line that corresponds to the global minimum (over the visible domain)
 		svg_ep.append("path")
 		        .attr("class", "true-weight-line")
-		        .attr("d", valueline_ep([{x:true_weight, y:EMIN},{x:true_weight, y:EMAX}]));
+		        .attr("d", valueline_ep([{x:global_min_weight, y:EMIN},{x:global_min_weight, y:EMAX}]));
 
 		// Create a single circle for highlighting selected point
 		old_point = svg_ep.append("circle")
@@ -714,8 +826,14 @@ let PlotError = function() {
 		svg_ep.append("path")
 		        .attr("class", "gradient")
 		        .attr("d", valueline_ep([
-		            {x:w_hat_old, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))},
-		            {x:w_hat, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))}]));
+		            {x:w_hat, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))},
+					{x:w_hat + gradient_step, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))}]));
+					
+		if (show_batch_error) {
+			svg_ep.append("path")
+				.attr("class", "batch-error-line")
+				.attr("d", valueline_ep(batch_error));
+		}
 	} // draw()
 
 	draw();
@@ -732,6 +850,17 @@ let PlotError = function() {
 	        .attr("d", valueline_ep(state.error_data));
 
 	    update_error_point()
+	}
+
+	function update_true_weight_line() {
+		svg_ep.selectAll("path.true-weight-line").remove()
+
+		if (show_true_weight_line) {
+			// Draw the line that corresponds to the global minimum (over the visible domain)
+			svg_ep.append("path")
+				.attr("class", "true-weight-line")
+				.attr("d", valueline_ep([{x:global_min_weight, y:EMIN},{x:global_min_weight, y:EMAX}]));
+		}
 	}
 
 	function update_batch_error_line() {
@@ -751,8 +880,8 @@ let PlotError = function() {
 	        svg_ep.append("path")
 	            .attr("class", "gradient")
 	            .attr("d", valueline_ep([
-	                {x:w_hat_old, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))},
-	                {x:w_hat, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))}]));
+	                {x:w_hat, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))},
+	                {x:w_hat + gradient_step, y:yScale_ep.invert(d3.select('#error_point').attr('cy'))}]));
 	    }
 	}
 
@@ -771,25 +900,26 @@ let PlotError = function() {
 
 	    // remove_existing_highlight();
 	    select_weight(selected_weight_index);
-
 	    Engine.recalculate_hypothesis();
-	    PlotData.update_hypothesis_line();
+		PlotData.update_hypothesis_line();
 	    Engine.recalculate_pointwise_error();
-	    PlotData.update_training_circles();
+		PlotData.update_training_circles();
+		Engine.sgd_compute();
+		update_gradient_line();
 	}
 
 	function select_weight(index) {
-    let d = state.error_data[index];
+		let d = state.error_data[index];
 
-    d3.select('#error_point')
-        .attr("fill", "orange")
-        .attr("r", radius)
-        .attr("cx", xScale_ep(w_hat))
-        .attr("cy", yScale_ep(d.y))
-        .attr('weight_index',index)
-        .raise();
-    
-}
+		d3.select('#error_point')
+			.attr("fill", "orange")
+			.attr("r", radius)
+			.attr("cx", xScale_ep(w_hat))
+			.attr("cy", yScale_ep(d.y))
+			.attr('weight_index',index)
+			.raise();
+		
+	}
 
 	function update_error_point() {
 	    let d = state.error_data[selected_weight_index];
@@ -809,6 +939,7 @@ let PlotError = function() {
 		update_error_line:update_error_line,
 		update_batch_error_line:update_batch_error_line,
 		update_gradient_line:update_gradient_line,
+		update_true_weight_line:update_true_weight_line,
 		select_weight:select_weight,
 		draw:draw,
 	}
@@ -820,7 +951,6 @@ LEARNING CURVE PLOT
 --------------------------------------------
 */
 let PlotLearningCurve = function() {
-	let h_lc = h/2;
 	let xScale_lc, yScale_lc, xAxis_lc, yAxis_lc, valueline_lc, svg_lc;
 	
 	function draw() {
@@ -895,7 +1025,7 @@ let PlotLearningCurve = function() {
 		update_learning_curve:update_learning_curve,
 		draw:draw,
 	}
-}();
+}(); // PlotLearningCurve
 
 /*
 --------------------------------------------
@@ -905,18 +1035,27 @@ UPDATE FUNCTIONS AND MISC
 
 // Draw new data and recalculate component values
 function refresh() {
-    state = Engine.new_scenario();
-    PlotError.update_error_line();
+	state = Engine.new_scenario();
+	Engine.update_min_weight_val();
+	PlotError.update_error_line();
+	PlotError.update_true_weight_line();
     PlotData.update_target_line();
     PlotData.update_hypothesis_line();
-    PlotData.update_training_circles();  
+	PlotData.update_training_circles();
+	update_sliders();
+	reset_sgd();
+	PlotError.update_batch_error_line();
 }
 
 function reset_sgd() {
-    learning_rate = document.getElementById("slideLearningRate").value / 100 * LR_MAX;
+    learning_rate = learning_rate_stored;
     epoch = 0;
     error_by_epoch = [];
-    error_within_epoch = [];
+	error_within_epoch = [];
+	Engine.clear_batches();
+	Engine.get_next_batch();
+	PlotError.update_batch_error_line();
+	PlotData.update_training_circles();
     PlotLearningCurve.update_learning_curve();
     document.getElementById('learningrate').innerHTML = "Learning Rate = " + learning_rate.toFixed(4) ;
     document.getElementById('weight').innerHTML = "Weight = " + w_hat.toFixed(3) ;
@@ -925,7 +1064,8 @@ function reset_sgd() {
 }
 
 function update_for_sgd() {
-    Engine.sgd_update()
+	Engine.sgd_update();
+	Engine.sgd_compute();
     Engine.recalculate_hypothesis();
     PlotData.update_hypothesis_line();
     Engine.recalculate_pointwise_error();
@@ -942,7 +1082,8 @@ function update_for_sgd() {
     }
     
     PlotError.update_batch_error_line();
-    PlotData.update_training_circles();
+	PlotData.update_training_circles();
+	
     PlotError.update_gradient_line();
 }
 
@@ -960,16 +1101,6 @@ function get_nearest_x(x) {
     return index;
 }
 
-function get_new_plot_sizes() {
-	if (window.innerWidth <= MAX_SCREEN_WIDTH) {
-		w = window.innerWidth * 0.9;
-		h = window.innerHeight / 4;
-	} else {
-		w = window.innerWidth/2 * 0.9,
-	    h = window.innerHeight*2/3 * 0.9;
-	}
-}
-
 function replot_all_plots() {
 	get_new_plot_sizes();
 	PlotData.draw();
@@ -982,6 +1113,8 @@ function replot_all_plots() {
 	selected_weight_index = get_nearest_x(w_hat);
 	PlotError.select_weight(selected_weight_index);
 	PlotError.update_error_line();
+	PlotError.update_true_weight_line();
+	
 }
 
 window.addEventListener('resize', replot_all_plots);
@@ -1026,8 +1159,10 @@ function toggle_batch_error() {
     if (!show_batch_error) {
         Engine.get_batch_error()
     } 
-    show_batch_error = !show_batch_error;
-    PlotError.update_batch_error_line();
+	show_batch_error = !show_batch_error;
+	show_minibatch = !show_minibatch;
+	PlotError.update_batch_error_line();
+	PlotData.update_training_circles();
 }
 
 function toggle_gradient() {
@@ -1044,12 +1179,21 @@ SLIDER CONTROLS AND INTERACTIONS
 let Slider = function(config) {
 	var slider_element = document.getElementById(config.slider_element);
 	var slider_label = document.getElementById(config.slider_label);
-	slider_element.value = config.value / config.max_value * 100; 
+	slider_element.step = 0.5;
+	if (config.scale == 'linear') {
+		slider_element.value = (config.value - config.min_value)  / (config.max_value-config.min_value) * 100; 
+	} else if (config.scale = 'log') {
+		slider_element.value = (Math.log10(config.value) - Math.log10(config.min_value))  / (Math.log10(config.max_value)-Math.log10(config.min_value)) * 100; 
+	}
 	slider_label.innerHTML = config.slider_label_name + " = " + config.value.toFixed(config.to_fixed); // Display the default slider value
 
 	// Update the current slider value (each time you drag the slider handle)
 	slider_element.oninput = function() {
-	    config.value = this.value /100 * config.max_value;
+		if (config.scale == 'linear') {
+			config.value = this.value / 100 * (config.max_value-config.min_value) + config.min_value; 
+		} else if (config.scale = 'log') {
+			config.value = 10**(this.value / 100 * (Math.log10(config.max_value)-Math.log10(config.min_value)) + Math.log10(config.min_value)); 
+		}
 	    config.setval(config.value);
 	    slider_label.innerHTML = config.slider_label_name + " = " + config.value.toFixed(config.to_fixed);
 	    config.func();
@@ -1062,20 +1206,35 @@ let config_slider_n_training,
 	config_slider_batch_size;
 
 
-function update_sliders() {
+function update_sliders(update_n_training=true) {
 	config_slider_n_training = {
 		slider_element: "slideNumSamples",
 		slider_label: "slideNumSamplesLabel",
 		slider_label_name: "Number of training datapoints",
 		value: nData,
 		max_value: NMAX,
+		min_value: 1,
 		to_fixed: 0,
+		scale: 'linear',
 		setval: function(value) {
 			nData = Math.round(value);
 		},
 		func: function() {
 			indices_sgd = [];
-    		refresh();
+			if (nData < batchsize) {
+				batchsize = nData;
+			}
+			update_sliders(false);
+			state = Engine.new_scenario();
+			reset_sgd();
+			Engine.update_min_weight_val();
+			PlotError.update_error_line();
+			PlotError.update_true_weight_line();
+			PlotData.update_target_line();
+			PlotData.update_hypothesis_line();
+			PlotData.update_training_circles();
+			Engine.get_batch_error();
+			PlotError.update_batch_error_line();
 		}
 	};
 
@@ -1085,14 +1244,20 @@ function update_sliders() {
 		slider_label_name:"Noise std",
 		value: noise_std,
 		max_value: NOISE_MAX,
+		min_value: 0,
 		to_fixed: 3,
+		scale: 'linear',
 		setval: function(value) {
 			noise_std = value;
 		},
 		func: function() {
-			Engine.recalculate_noise()
+			Engine.recalculate_noise();
+			Engine.get_batch_error();
     		PlotData.update_training_circles();
-    		PlotError.update_error_line();
+			PlotError.update_error_line();
+			Engine.sgd_compute();
+			PlotError.update_gradient_line();
+			PlotError.update_batch_error_line();
 		}
 	};
 
@@ -1102,11 +1267,16 @@ function update_sliders() {
 		slider_label_name:"Learning rate",
 		value: learning_rate,
 		max_value: LR_MAX,
+		min_value: LR_MIN,
 		to_fixed: 3,
+		scale: 'log',
 		setval: function(value) {
 			learning_rate = value;
+			learning_rate_stored = value;
 		},
 		func: function() {
+			Engine.sgd_compute();
+			PlotError.update_gradient_line();
 		}
 	};
 
@@ -1116,16 +1286,27 @@ function update_sliders() {
 		slider_label_name:"Batch size",
 		value: batchsize,
 		max_value: nData,
+		min_value: 1,
 		to_fixed: 0,
+		scale: 'linear',
 		setval: function(value) {
 			batchsize = Math.round(value);
 		},
 		func: function() {
 			indices_sgd = [];
+			batch_indices = [];
+			changed_batch_size = true;
+			Engine.clear_batches();
+			Engine.get_next_batch();
+			Engine.get_batch_error();
+			PlotError.update_batch_error_line();
+			changed_batch_size = false;
 		}
 	};
 
-	Slider(config_slider_n_training);
+	if (update_n_training) {
+		Slider(config_slider_n_training);
+	}
 	Slider(config_slider_noise);
 	Slider(config_slider_learning_rate);
 	Slider(config_slider_batch_size);
@@ -1133,11 +1314,19 @@ function update_sliders() {
 }
 
 let FunctionDropdown = function() {
-	var dropdown = document.getElementById('funcs');
-	dropdown.oninput = function() {
-		if (dropdown.value != f_type) {
-			f_type = dropdown.value;
+	var dropdown_target = document.getElementById('func_target');
+	var dropdown_hypothesis = document.getElementById('func_hypothesis');
+
+	var function_update = function() {
+		// Check if either dropdown changed
+		if ((dropdown_target.value != f_type_target) || 
+			(dropdown_hypothesis.value != f_type_hypothesis)) {
+
+			f_type_target = dropdown_target.value;
+			f_type_hypothesis = dropdown_hypothesis.value;
 			state = Engine.new_scenario();
+			Engine.update_min_weight_val()
+			reset_sgd()
 			PlotData.draw();
 			PlotError.draw();
 			PlotLearningCurve.draw();
@@ -1148,10 +1337,16 @@ let FunctionDropdown = function() {
 			selected_weight_index = get_nearest_x(w_hat);
 			PlotError.select_weight(selected_weight_index);
 			PlotError.update_error_line();
+			Engine.get_batch_error();
+			PlotError.update_batch_error_line();
 			update_sliders();
-			reset_sgd()
+			PlotError.update_gradient_line();
+			
 		}
 	}
+
+	dropdown_target.oninput = function_update;
+	dropdown_hypothesis.oninput = function_update;
 }();
 
 /*
@@ -1161,6 +1356,8 @@ INITIATE THE PLOTS
 */
 get_new_plot_sizes();
 state = Engine.new_scenario();
+reset_sgd();
+Engine.update_min_weight_val()
 PlotData.draw();
 PlotError.draw();
 PlotLearningCurve.draw();
@@ -1171,5 +1368,8 @@ PlotData.update_training_circles();
 selected_weight_index = get_nearest_x(w_hat);
 PlotError.select_weight(selected_weight_index);
 PlotError.update_error_line();
+Engine.get_batch_error();
+PlotError.update_batch_error_line();
 update_sliders();
-reset_sgd();
+Engine.sgd_compute();
+PlotError.update_gradient_line();
