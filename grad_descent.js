@@ -8,6 +8,7 @@ Author: Kyle Bradbury
 // [ ] Add more interesting functions
 // [ ] Cut off points at axes (training data)
 // [ ] Resize axes to fit all the data
+// [ ] Raise the point above batch error
 
 // May be unnecessary:
 // [ ] Make learning rate decay a function of epoch
@@ -590,7 +591,7 @@ let PlotData = function() {
 		// Legend
 		svg.append("svg:image")
 				.attr("class","legend")
-				.attr("xlink:href", "./img/legend1.png")
+				.attr("xlink:href", "legend1.png")
 				.attr("x", w-160)
 				.attr("y", h-170)
 				.attr("preserveAspectRatio","xMaxYMax")
@@ -842,7 +843,7 @@ let PlotError = function() {
 		// Legend
 		svg_ep.append("svg:image")
 				.attr("class","legend")
-				.attr("xlink:href", "./img/legend2.png")
+				.attr("xlink:href", "legend2.png")
 				.attr("x", w-160)
 				.attr("y", 0)
 				.attr("preserveAspectRatio","xMaxYMin")
