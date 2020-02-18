@@ -4,12 +4,8 @@ Author: Kyle Bradbury
 */
 
 // TODO:
-// [X] Fix toggle for target function (function automatically reappears when new data is drawn)
-// [X] Make the learning rate slider log-scaled
-// [X] Make sure gradients and batch error appears for all replots / function changes
+// [ ] Make buttons change color when toggled on/off
 // [ ] Add more interesting functions
-// [X] Have gradient appear on initial load
-// [ ] Add legend
 // [ ] Cut off points at axes (training data)
 // [ ] Resize axes to fit all the data
 
@@ -22,7 +18,11 @@ Author: Kyle Bradbury
 // [ ] Checkbox to color the dots (or not)
 
 // Completed:
-
+// [X] Add legend
+// [X] Have gradient appear on initial load
+// [X] Fix toggle for target function (function automatically reappears when new data is drawn)
+// [X] Make the learning rate slider log-scaled
+// [X] Make sure gradients and batch error appears for all replots / function changes
 /*
 --------------------------------------------
 INITIALIZATIONS
@@ -76,6 +76,7 @@ let XMAX = Math.PI,
     show_gradient_line = false,
 	show_learning_curve = true,
 	show_true_weight_line = true,
+	show_legend = true,
 	changed_batch_size = false,
     error_by_epoch = [],
     error_within_epoch = [],
@@ -587,27 +588,29 @@ let PlotData = function() {
 			.text("f(x,w)");
 		
 		// Legend
-		svg.append("text")
-		    .attr("class", "legend")
-			.attr("text-anchor", "end")
-			.attr("vertical-align", "baseline")
-		    .attr("y", 0.91*h)
-			.attr("x", 0.95*w)
-			.attr("fill",'grey')
-			.text("Target Function");
-
-		svg.append("text")
-		    .attr("class", "legend")
-			.attr("text-anchor", "end")
-			.attr("vertical-align", "baseline")
-		    .attr("y", 0.89*h)
-			.attr("x", 0.95*w)
-			.attr("fill",'orange')
-			.text("Hypothesis Function");
+		svg.append("svg:image")
+				.attr("class","legend")
+				.attr("xlink:href", "./img/legend1.png")
+				.attr("x", w-160)
+				.attr("y", h-170)
+				.attr("preserveAspectRatio","xMaxYMax")
+				.attr("width", 150)
+				.attr("height", 140)
+				.attr("visibility", function(){
+					if (show_legend) {return "visible"}
+					else {return "hidden"}
+				});
 
 	} // draw()
 
 	draw();
+
+	function update_legend() {
+		svg.selectAll(".legend").attr("visibility",function() {
+			if (show_legend) {return "visible"}
+			else {return "hidden"}
+		})
+	}
 
 	function update_target_line() {
 	    svg.selectAll("path.targetline").remove()
@@ -635,13 +638,13 @@ let PlotData = function() {
 	}
 
 	function update_training_circles() {
-	    var training_circles = svg.selectAll("circle")
+	    var training_circles = svg.selectAll("circle.data")
 	    .data(state.data) ;
 
 	    training_circles.exit().remove(); 
 	    training_circles.enter()
 	        .append("circle")
-	        .merge(training_circles)
+			.merge(training_circles)
 	        .attr("cx", function(d) { return xScale(d.x); })
 	        .attr("cy", function(d) { return yScale(d.y); })
 	        .attr("r", radius)
@@ -651,9 +654,9 @@ let PlotData = function() {
 	        })
 	        .attr('class', function(d,i) {
 	            if (batch_indices.includes(i) && show_minibatch) {
-	                return "batch-sample";
+	                return "batch-sample data";
 	            } else {
-	                return "";
+	                return "data";
 	            }
 	        })
 	        .call(d3.drag()
@@ -735,6 +738,7 @@ let PlotData = function() {
 		dragstarted:dragstarted,
 		dragged:dragged,
 		dragended:dragended,
+		update_legend:update_legend,
 	}
 }(); // PlotData 
 
@@ -834,10 +838,31 @@ let PlotError = function() {
 				.attr("class", "batch-error-line")
 				.attr("d", valueline_ep(batch_error));
 		}
+
+		// Legend
+		svg_ep.append("svg:image")
+				.attr("class","legend")
+				.attr("xlink:href", "./img/legend2.png")
+				.attr("x", w-160)
+				.attr("y", 0)
+				.attr("preserveAspectRatio","xMaxYMin")
+				.attr("width", 150)
+				.attr("height", 150)
+				.attr("visibility",function() {
+					if (show_legend) {return "visible"}
+					else {return "hidden"}
+				});
 	} // draw()
 
 	draw();
 	
+	function update_legend() {
+		svg_ep.selectAll(".legend").attr("visibility",function() {
+			if (show_legend) {return "visible"}
+			else {return "hidden"}
+		})
+	}
+
 	function error_plot_clicked() {
 	    hypothesis_locked = !hypothesis_locked;
 	}
@@ -940,6 +965,7 @@ let PlotError = function() {
 		update_batch_error_line:update_batch_error_line,
 		update_gradient_line:update_gradient_line,
 		update_true_weight_line:update_true_weight_line,
+		update_legend:update_legend,
 		select_weight:select_weight,
 		draw:draw,
 	}
@@ -1114,7 +1140,7 @@ function replot_all_plots() {
 	PlotError.select_weight(selected_weight_index);
 	PlotError.update_error_line();
 	PlotError.update_true_weight_line();
-	
+	PlotError.update_gradient_line();
 }
 
 window.addEventListener('resize', replot_all_plots);
@@ -1168,6 +1194,12 @@ function toggle_batch_error() {
 function toggle_gradient() {
     show_gradient_line = !show_gradient_line;
     PlotError.update_gradient_line();
+}
+
+function toggle_legend() {
+	show_legend = !show_legend;
+	PlotData.update_legend();
+    PlotError.update_legend();
 }
 
 /*
